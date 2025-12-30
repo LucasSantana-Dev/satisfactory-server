@@ -9,7 +9,7 @@ import threading
 import queue
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Callable
 
 import customtkinter as ctk
 
@@ -17,13 +17,15 @@ import customtkinter as ctk
 try:
     from mod_installer_core import (
         GamePathDetector, ModManager, Mod, InstallResult,
-        FicsitAPIClient, FicsitCLI, get_embedded_mods_config
+        FicsitAPIClient, FicsitCLI, get_embedded_mods_config,
+        PreVerifyInstaller, DependencyResolver, ModScanner
     )
 except ImportError:
     # When running as packaged exe, might need different import
     from .mod_installer_core import (
         GamePathDetector, ModManager, Mod, InstallResult,
-        FicsitAPIClient, FicsitCLI, get_embedded_mods_config
+        FicsitAPIClient, FicsitCLI, get_embedded_mods_config,
+        PreVerifyInstaller, DependencyResolver, ModScanner
     )
 
 
@@ -55,17 +57,15 @@ class ModInstallerApp(ctk.CTk):
         # State
         self.game_path: Optional[str] = None
         self.mod_manager: Optional[ModManager] = None
-        self.ficsit_cli: Optional[FicsitCLI] = None
+        self.pre_verify_installer: Optional[PreVerifyInstaller] = None
         self.mod_checkboxes: Dict[str, ctk.CTkCheckBox] = {}
         self.mod_vars: Dict[str, ctk.BooleanVar] = {}
         self.is_installing = False
         self.install_queue = queue.Queue()
-        self.use_ficsit_cli = True  # Prefer ficsit-cli over direct download
 
         # Setup UI
         self._create_widgets()
         self._detect_game_path()
-        self._init_ficsit_cli()
 
     def _create_widgets(self):
         """Create all UI widgets."""
@@ -268,26 +268,6 @@ class ModInstallerApp(ctk.CTk):
 
         threading.Thread(target=detect_thread, daemon=True).start()
 
-    def _init_ficsit_cli(self):
-        """Initialize ficsit-cli tool in background."""
-        def init_thread():
-            try:
-                self.after(0, lambda: self.log("[INFO] Initializing ficsit-cli (official mod tool)..."))
-                cli = FicsitCLI()
-
-                if cli.is_available():
-                    self.ficsit_cli = cli
-                    version = cli.get_version() or "unknown"
-                    self.after(0, lambda: self.log(f"[OK] ficsit-cli ready (version: {version})"))
-                else:
-                    self.after(0, lambda: self.log("[WARN] ficsit-cli not available, will use fallback method"))
-                    self.use_ficsit_cli = False
-            except Exception as e:
-                self.after(0, lambda: self.log(f"[WARN] ficsit-cli init failed: {e}"))
-                self.use_ficsit_cli = False
-
-        threading.Thread(target=init_thread, daemon=True).start()
-
     def _on_path_detected(self, path: Optional[str]):
         """Handle detected game path."""
         if path:
@@ -434,7 +414,7 @@ class ModInstallerApp(ctk.CTk):
             self.mod_vars[mod.mod_reference].set(mod.required)
 
     def _start_installation(self):
-        """Start mod installation process."""
+        """Start mod installation process using pre-verify workflow."""
         if self.is_installing:
             return
 
@@ -442,13 +422,13 @@ class ModInstallerApp(ctk.CTk):
             self.log("[ERROR] Please select a valid game path first")
             return
 
-        # Get selected mods
-        selected_mods = [
-            mod for mod in self.mod_manager.mods
+        # Get selected mods (just the references)
+        selected_refs = [
+            mod.mod_reference for mod in self.mod_manager.mods
             if self.mod_vars.get(mod.mod_reference, ctk.BooleanVar()).get()
         ]
 
-        if not selected_mods:
+        if not selected_refs:
             self.log("[WARN] No mods selected")
             return
 
@@ -457,9 +437,11 @@ class ModInstallerApp(ctk.CTk):
         self.verify_btn.configure(state="disabled")
 
         self.log("")
-        self.log("=" * 40)
-        self.log(f"Starting installation of {len(selected_mods)} mods...")
-        self.log("=" * 40)
+        self.log("=" * 50)
+        self.log("PRE-VERIFY INSTALLATION")
+        self.log("=" * 50)
+        self.log(f"Selected {len(selected_refs)} mods")
+        self.log("")
 
         # Create backup first
         try:
@@ -469,226 +451,266 @@ class ModInstallerApp(ctk.CTk):
         except Exception as e:
             self.log(f"[WARN] Backup failed: {e}")
 
-        # Decide which installation method to use
-        if self.use_ficsit_cli and self.ficsit_cli and self.ficsit_cli.is_available():
-            self.log("[INFO] Using ficsit-cli (official tool) for installation")
-            threading.Thread(
-                target=self._install_with_ficsit_cli,
-                args=(selected_mods,),
-                daemon=True
-            ).start()
-        else:
-            self.log("[INFO] Using direct download method")
-            threading.Thread(
-                target=self._install_with_direct_download,
-                args=(selected_mods,),
-                daemon=True
-            ).start()
+        # Initialize pre-verify installer
+        self.pre_verify_installer = PreVerifyInstaller(self.game_path)
 
-    def _install_with_ficsit_cli(self, selected_mods: List[Mod]):
-        """Install mods using the official ficsit-cli tool."""
-        # Install ALL mods explicitly - don't rely on ficsit-cli auto-resolution
-        # This ensures dependencies are actually installed where the game can find them
-        mod_refs = [mod.mod_reference for mod in selected_mods]
+        # Run installation in background thread
+        threading.Thread(
+            target=self._run_preverify_installation,
+            args=(selected_refs,),
+            daemon=True
+        ).start()
 
-        if not mod_refs:
-            self.after(0, lambda: self.log("[WARN] No mods to install"))
-            self.after(0, lambda: self._on_installation_complete(0, 0, 0))
-            return
-
-        self.after(0, lambda: self.log(f"[INFO] Installing {len(mod_refs)} mods (including dependencies)"))
+    def _run_preverify_installation(self, selected_refs: List[str]):
+        """Run the pre-verify installation workflow in background."""
+        phase_count = 5
+        current_phase = 0
 
         def progress_callback(mod_ref: str, status: str):
-            self.after(0, lambda: self.log(f"[....] {status}"))
-            # Update progress bar
-            if mod_ref:
-                try:
-                    idx = mod_refs.index(mod_ref)
-                    progress = idx / len(mod_refs)
-                    self.after(0, lambda p=progress: self._update_progress(p, status))
-                except ValueError:
-                    pass
+            # Update progress and log
+            self.after(0, lambda s=status: self.log(f"  {s}"))
+            # Update progress bar based on phase
+            progress = (current_phase / phase_count) + (0.1 / phase_count)
+            self.after(0, lambda p=progress, s=status: self._update_progress(p, s))
+
+        def download_progress_callback(downloaded: int, total: int):
+            if total > 0:
+                pct = downloaded / total
+                status = f"Downloading... {downloaded // 1024}KB / {total // 1024}KB"
+                # Progress within phase 4
+                progress = (3 / phase_count) + (pct / phase_count)
+                self.after(0, lambda p=progress, s=status: self._update_progress(p, s))
 
         try:
-            success, successful_mods, failed_mods_with_errors, diagnostics = self.ficsit_cli.install_mods(
-                self.game_path,
-                mod_refs,
-                progress_callback
-            )
-
-            # Log diagnostic information
+            # Phase 1: Resolve dependencies
+            current_phase = 1
             self.after(0, lambda: self.log(""))
-            self.after(0, lambda: self.log("[DEBUG] ficsit-cli diagnostics:"))
-            for diag_line in diagnostics.split("\n"):
-                self.after(0, lambda line=diag_line: self.log(f"  {line}"))
+            self.after(0, lambda: self.log("[PHASE 1] Resolving Dependencies"))
+            self.after(0, lambda: self.log("-" * 40))
+            self.after(0, lambda: self._update_progress(0.1, "Resolving dependencies..."))
 
-            if success:
-                self.after(0, lambda: self.log(f"[OK] ficsit-cli installed {len(successful_mods)} mods"))
-                self.after(0, lambda: self._on_installation_complete(
-                    len(successful_mods), len(failed_mods_with_errors), 0
-                ))
-            else:
-                # Log failures WITH actual error messages
-                for failed_ref, error_msg in failed_mods_with_errors.items():
-                    # Truncate long error messages
-                    short_error = error_msg[:100] + "..." if len(error_msg) > 100 else error_msg
-                    self.after(0, lambda r=failed_ref, e=short_error: self.log(f"[WARN] {r} failed: {e}"))
+            result = self.pre_verify_installer.phase1_resolve_dependencies(
+                selected_refs, progress_callback
+            )
+            self._log_phase_result(result)
 
-                if failed_mods_with_errors and len(successful_mods) > 0:
-                    self.after(0, lambda: self.log("[INFO] Trying fallback for failed mods..."))
-                    # Get the failed mod objects
-                    failed_mod_objs = [m for m in selected_mods if m.mod_reference in failed_mods_with_errors]
-                    self._install_with_direct_download_internal(
-                        failed_mod_objs,
-                        len(successful_mods),
-                        0,
-                        0
-                    )
-                else:
-                    self.after(0, lambda: self._on_installation_complete(
-                        len(successful_mods), len(failed_mods_with_errors), 0
-                    ))
+            if not result.success:
+                self.after(0, lambda: self._on_preverify_complete(False, "Dependency resolution failed"))
+                return
+
+            # Phase 2: Scan installed mods
+            current_phase = 2
+            self.after(0, lambda: self.log(""))
+            self.after(0, lambda: self.log("[PHASE 2] Scanning Installed Mods"))
+            self.after(0, lambda: self.log("-" * 40))
+            self.after(0, lambda: self._update_progress(0.3, "Scanning installed mods..."))
+
+            result = self.pre_verify_installer.phase2_scan_installed(progress_callback)
+            self._log_phase_result(result)
+
+            # Phase 3: Gap analysis
+            current_phase = 3
+            self.after(0, lambda: self.log(""))
+            self.after(0, lambda: self.log("[PHASE 3] Gap Analysis"))
+            self.after(0, lambda: self.log("-" * 40))
+            self.after(0, lambda: self._update_progress(0.4, "Analyzing gaps..."))
+
+            result = self.pre_verify_installer.phase3_gap_analysis(progress_callback)
+            self._log_phase_result(result)
+
+            gap = self.pre_verify_installer.gap_analysis
+            if gap and gap.all_ok:
+                self.after(0, lambda: self.log(""))
+                self.after(0, lambda: self.log("[OK] All mods already installed and valid!"))
+                self.after(0, lambda: self._on_preverify_complete(True, "All mods already installed"))
+                return
+
+            # Phase 4: Install missing mods
+            current_phase = 4
+            self.after(0, lambda: self.log(""))
+            self.after(0, lambda: self.log("[PHASE 4] Installing Missing Mods"))
+            self.after(0, lambda: self.log("-" * 40))
+            self.after(0, lambda: self._update_progress(0.5, "Installing missing mods..."))
+
+            result = self.pre_verify_installer.phase4_install_missing(
+                progress_callback, download_progress_callback
+            )
+            self._log_phase_result(result)
+
+            # Phase 5: Final verification
+            current_phase = 5
+            self.after(0, lambda: self.log(""))
+            self.after(0, lambda: self.log("[PHASE 5] Final Verification"))
+            self.after(0, lambda: self.log("-" * 40))
+            self.after(0, lambda: self._update_progress(0.9, "Verifying installation..."))
+
+            result = self.pre_verify_installer.phase5_final_verify(progress_callback)
+            self._log_phase_result(result)
+
+            # Complete
+            self.after(0, lambda r=result: self._on_preverify_complete(
+                r.success, r.message
+            ))
 
         except Exception as e:
-            self.after(0, lambda: self.log(f"[ERROR] ficsit-cli installation failed: {e}"))
-            self.after(0, lambda: self.log("[INFO] Falling back to direct download for all mods..."))
-            # Fallback needs ALL mods including dependencies since it doesn't auto-resolve
-            self._install_with_direct_download(selected_mods)
+            import traceback
+            error_msg = f"Installation error: {str(e)}"
+            self.after(0, lambda e=error_msg: self.log(f"[ERROR] {e}"))
+            self.after(0, lambda: self.log(traceback.format_exc()))
+            self.after(0, lambda: self._on_preverify_complete(False, error_msg))
 
-    def _install_with_direct_download(self, selected_mods: List[Mod]):
-        """Install mods using direct download (fallback method)."""
-        self._install_with_direct_download_internal(selected_mods, 0, 0, 0)
-
-    def _install_with_direct_download_internal(
-        self,
-        mods_to_install: List[Mod],
-        initial_success: int,
-        initial_fail: int,
-        initial_skip: int
-    ):
-        """Internal direct download installation."""
-        success_count = initial_success
-        fail_count = initial_fail
-        skip_count = initial_skip
-
-        total = len(mods_to_install)
-        for i, mod in enumerate(mods_to_install):
-            progress = i / total
-            self.after(0, lambda p=progress, m=mod.name: self._update_progress(p, f"Fetching {m}..."))
-
-            # Fetch mod info
-            has_windows = self.mod_manager.fetch_mod_info(mod)
-
-            if not has_windows:
-                self.after(0, lambda m=mod.name: self.log(f"[SKIP] {m} - No Windows version"))
-                skip_count += 1
-                continue
-
-            self.after(0, lambda m=mod.name, v=mod.version: self.log(f"[....] Downloading {m} v{v}..."))
-
-            # Download and install
-            def progress_callback(downloaded, total_bytes):
-                if total_bytes > 0:
-                    pct = downloaded / total_bytes
-                    self.after(0, lambda p=progress + (pct / total): self._update_progress(
-                        p, f"Downloading... {downloaded // 1024}KB / {total_bytes // 1024}KB"
-                    ))
-
-            result = self.mod_manager.install_mod(mod, progress_callback)
-
-            if result.success:
-                self.after(0, lambda m=mod.name, r=result: self.log(
-                    f"[OK] {m} v{r.version} - {r.message}"
-                ))
-                success_count += 1
-            else:
-                self.after(0, lambda m=mod.name, r=result: self.log(
-                    f"[FAIL] {m} - {r.message}"
-                ))
-                fail_count += 1
-
-        # Complete
-        self.after(0, lambda: self._on_installation_complete(success_count, fail_count, skip_count))
+    def _log_phase_result(self, result):
+        """Log details from a phase result."""
+        for detail in result.details:
+            self.after(0, lambda d=detail: self.log(f"  {d}"))
+        self.after(0, lambda r=result: self.log(f"  >> {r.message}"))
 
     def _update_progress(self, value: float, status: str):
         """Update progress bar and status label."""
-        self.progress_bar.set(value)
+        self.progress_bar.set(min(value, 1.0))
         self.status_label.configure(text=status)
 
-    def _on_installation_complete(self, success: int, failed: int, skipped: int):
-        """Handle installation completion."""
+    def _on_preverify_complete(self, success: bool, message: str):
+        """Handle pre-verify installation completion."""
         self.is_installing = False
         self.install_btn.configure(state="normal", text="Install Selected Mods")
         self.verify_btn.configure(state="normal")
         self.progress_bar.set(1)
 
         self.log("")
-        self.log("=" * 40)
-        self.log("Installation Complete!")
-        self.log(f"  Successful: {success}")
-        self.log(f"  Skipped: {skipped} (no Windows version)")
-        self.log(f"  Failed: {failed}")
-        self.log("=" * 40)
+        self.log("=" * 50)
 
-        if success > 0:
+        if success:
+            self.log("INSTALLATION SUCCESSFUL!")
+            self.log("=" * 50)
             self.status_label.configure(text="Installation complete! Launch Satisfactory to play.")
+
+            # Show summary
+            if self.pre_verify_installer and self.pre_verify_installer.gap_analysis:
+                gap = self.pre_verify_installer.gap_analysis
+                self.log(f"  Total mods required: {len(gap.needed_mods)}")
+                self.log(f"  Already installed: {len(gap.valid_mods)}")
+                self.log(f"  Newly installed: {len(gap.mods_to_install)}")
+
             self.log("")
             self.log("Next steps:")
             self.log("  1. Launch Satisfactory from Steam/Epic")
             self.log("  2. The game should detect mods automatically")
             self.log("  3. Look for 'MODS' button in main menu")
             self.log("  4. Connect to the modded server")
-            if self.ficsit_cli and self.ficsit_cli.is_available():
-                self.log("")
-                self.log("Mods were installed using the official ficsit-cli tool")
-                self.log("for maximum compatibility with Satisfactory.")
         else:
+            self.log("INSTALLATION FAILED!")
+            self.log("=" * 50)
+            self.log(f"  Reason: {message}")
             self.status_label.configure(text="Installation failed. Check log for details.")
 
+            # Show what's still missing
+            if self.pre_verify_installer:
+                scanner = ModScanner(self.pre_verify_installer.mods_dir)
+                missing = scanner.get_missing_mods(
+                    list(self.pre_verify_installer.resolved_mods.keys())
+                )
+                if missing:
+                    self.log("")
+                    self.log("Still missing mods:")
+                    for ref in missing:
+                        self.log(f"  - {ref}")
+
+            self.log("")
+            self.log("Try:")
+            self.log("  1. Check your internet connection")
+            self.log("  2. Try running the installer again")
+            self.log("  3. Check if mods are available on ficsit.app")
+
     def _verify_installation(self):
-        """Verify installed mods."""
-        if not self.mod_manager:
+        """Verify installed mods using the ModScanner."""
+        if not self.game_path:
             self.log("[ERROR] Please select a valid game path first")
             return
 
         self.log("")
-        self.log("=" * 40)
-        self.log("Verifying Installation...")
-        self.log("=" * 40)
+        self.log("=" * 50)
+        self.log("VERIFICATION")
+        self.log("=" * 50)
 
-        results = self.mod_manager.verify_all()
+        # Get selected mod references
+        selected_refs = [
+            mod.mod_reference for mod in (self.mod_manager.mods if self.mod_manager else [])
+            if self.mod_vars.get(mod.mod_reference, ctk.BooleanVar()).get()
+        ]
+
+        if not selected_refs:
+            self.log("[WARN] No mods selected to verify")
+            return
+
+        # Use ModScanner to check installed mods
+        mods_dir = Path(self.game_path) / "FactoryGame" / "Mods"
+        scanner = ModScanner(mods_dir)
+
+        self.log("")
+        self.log("Scanning mods directory...")
+        installed = scanner.scan_installed()
+
+        self.log(f"Found {len(installed)} installed mod folders")
+        self.log("")
 
         valid_count = 0
         invalid_count = 0
         missing_count = 0
 
-        for ref, result in results.items():
-            mod = next((m for m in self.mod_manager.mods if m.mod_reference == ref), None)
+        # First check all selected mods
+        self.log("Selected mods status:")
+        for ref in selected_refs:
+            mod = next((m for m in self.mod_manager.mods if m.mod_reference == ref), None) if self.mod_manager else None
             name = mod.name if mod else ref
-            is_selected = self.mod_vars.get(ref, ctk.BooleanVar()).get()
 
-            if not result["installed"]:
-                if is_selected:
-                    self.log(f"[!!] {name} - Not installed")
-                    missing_count += 1
-            elif not result["valid"]:
-                self.log(f"[!!] {name} - Invalid ({result['message']})")
+            if ref not in installed:
+                self.log(f"  [!!] {name} - NOT INSTALLED")
+                missing_count += 1
+            elif not installed[ref].valid:
+                status = installed[ref]
+                self.log(f"  [!!] {name} - INVALID: {status.message}")
                 invalid_count += 1
             else:
-                pak_count = result.get("pak_count", 0)
-                dll_count = result.get("dll_count", 0)
-                self.log(f"[OK] {name} - {pak_count} pak, {dll_count} dll")
+                status = installed[ref]
+                version_str = f"v{status.version}" if status.version else ""
+                self.log(f"  [OK] {name} {version_str} - {status.pak_count} pak, {status.dll_count} dll")
                 valid_count += 1
 
+        # Show additional installed mods (dependencies that may have been auto-installed)
+        extra_mods = [ref for ref in installed.keys() if ref not in selected_refs]
+        if extra_mods:
+            self.log("")
+            self.log("Additional installed mods (dependencies):")
+            for ref in extra_mods:
+                status = installed[ref]
+                if status.valid:
+                    self.log(f"  [OK] {ref} - {status.pak_count} pak")
+                    valid_count += 1
+                else:
+                    self.log(f"  [!!] {ref} - {status.message}")
+                    invalid_count += 1
+
+        # Summary
         self.log("")
+        self.log("-" * 40)
         self.log(f"Valid: {valid_count}, Invalid: {invalid_count}, Missing: {missing_count}")
 
         # Check SML specifically
-        sml_result = results.get("SML", {})
-        if sml_result.get("valid"):
+        if "SML" in installed and installed["SML"].valid:
             self.log("[OK] SML (Mod Loader) is properly installed")
         else:
-            self.log("[ERROR] SML is NOT properly installed - mods will NOT work!")
+            self.log("[ERROR] SML is NOT installed - mods will NOT work!")
+
+        # Final verdict
+        self.log("")
+        if missing_count == 0 and invalid_count == 0:
+            self.log("VERIFICATION PASSED - All mods are correctly installed!")
+            self.status_label.configure(text="Verification passed!")
+        else:
+            self.log("VERIFICATION FAILED - Some mods are missing or invalid")
+            self.log("Run 'Install Selected Mods' to repair")
+            self.status_label.configure(text="Verification failed - repair needed")
 
     def log(self, message: str):
         """Add message to log output."""
