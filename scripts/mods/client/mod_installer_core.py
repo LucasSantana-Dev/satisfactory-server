@@ -591,6 +591,342 @@ class FicsitAPIClient:
         except requests.RequestException:
             return False
 
+    def get_mod_with_dependencies(self, mod_reference: str) -> Tuple[Optional[str], Optional[str], List[str]]:
+        """
+        Get mod info including its dependencies.
+
+        Returns:
+            Tuple of (version, download_url, list of dependency mod_references)
+        """
+        query = """
+        query GetModWithDeps($modReference: ModReference!) {
+            getModByReference(modReference: $modReference) {
+                name
+                mod_reference
+                versions(filter: {limit: 1, order_by: created_at, order: desc}) {
+                    version
+                    dependencies {
+                        mod_reference
+                        condition
+                    }
+                    targets {
+                        targetName
+                        link
+                    }
+                }
+            }
+        }
+        """
+
+        variables = {"modReference": mod_reference}
+
+        try:
+            response = self.session.post(
+                FICSIT_API_URL,
+                json={"query": query, "variables": variables},
+                timeout=REQUEST_TIMEOUT
+            )
+            response.raise_for_status()
+            data = response.json()
+
+            mod_data = data.get("data", {}).get("getModByReference")
+            if not mod_data:
+                logger.warning(f"Mod not found on ficsit.app: {mod_reference}")
+                return None, None, []
+
+            versions = mod_data.get("versions", [])
+            if not versions:
+                logger.warning(f"No versions found for mod: {mod_reference}")
+                return None, None, []
+
+            version_info = versions[0]
+            version = version_info.get("version")
+
+            # Extract dependencies (excluding SML as it's always required)
+            dependencies = []
+            for dep in version_info.get("dependencies", []):
+                dep_ref = dep.get("mod_reference")
+                if dep_ref and dep_ref != "SML":
+                    dependencies.append(dep_ref)
+
+            # Find Windows target
+            download_url = None
+            targets = version_info.get("targets", [])
+            for target in targets:
+                if target.get("targetName") == "Windows":
+                    link = target.get("link", "")
+                    if link and not link.startswith("http"):
+                        link = f"https://api.ficsit.app{link}"
+                    download_url = link
+                    break
+
+            return version, download_url, dependencies
+
+        except requests.RequestException as e:
+            logger.error(f"API request failed for {mod_reference}: {e}")
+            return None, None, []
+        except (KeyError, json.JSONDecodeError) as e:
+            logger.error(f"Failed to parse API response for {mod_reference}: {e}")
+            return None, None, []
+
+
+@dataclass
+class ModStatus:
+    """Status of a mod installation."""
+    mod_reference: str
+    installed: bool
+    valid: bool
+    version: Optional[str] = None
+    has_uplugin: bool = False
+    pak_count: int = 0
+    dll_count: int = 0
+    so_count: int = 0
+    message: str = ""
+
+
+@dataclass
+class ResolvedMod:
+    """A mod with its resolved information from the API."""
+    mod_reference: str
+    name: str
+    version: Optional[str]
+    download_url: Optional[str]
+    dependencies: List[str]
+    has_windows_target: bool
+
+
+class DependencyResolver:
+    """
+    Resolves complete dependency trees for mods by querying ficsit.app API.
+    Handles transitive dependencies recursively.
+    """
+
+    def __init__(self, api_client: Optional[FicsitAPIClient] = None):
+        self.api_client = api_client or FicsitAPIClient()
+        self._cache: Dict[str, ResolvedMod] = {}
+        self._resolution_errors: Dict[str, str] = {}
+
+    def resolve_all(
+        self,
+        mod_references: List[str],
+        progress_callback: Optional[Callable[[str, str], None]] = None
+    ) -> Tuple[List[ResolvedMod], Dict[str, str]]:
+        """
+        Recursively resolve all dependencies for the given mods.
+
+        Args:
+            mod_references: List of mod references to resolve
+            progress_callback: Optional callback(mod_ref, status_message)
+
+        Returns:
+            Tuple of (list of all resolved mods including dependencies, dict of errors)
+        """
+        self._cache.clear()
+        self._resolution_errors.clear()
+
+        # Always include SML as it's required for all mods
+        all_needed = set(["SML"])
+        to_process = list(mod_references)
+
+        while to_process:
+            mod_ref = to_process.pop(0)
+
+            if mod_ref in self._cache:
+                continue
+
+            if progress_callback:
+                progress_callback(mod_ref, f"Resolving dependencies for {mod_ref}...")
+
+            logger.info(f"Resolving: {mod_ref}")
+
+            version, download_url, dependencies = self.api_client.get_mod_with_dependencies(mod_ref)
+
+            if version is None:
+                self._resolution_errors[mod_ref] = f"Mod not found on ficsit.app"
+                logger.warning(f"Could not resolve {mod_ref}")
+                continue
+
+            resolved = ResolvedMod(
+                mod_reference=mod_ref,
+                name=mod_ref,
+                version=version,
+                download_url=download_url,
+                dependencies=dependencies,
+                has_windows_target=download_url is not None
+            )
+            self._cache[mod_ref] = resolved
+            all_needed.add(mod_ref)
+
+            # Queue dependencies for resolution
+            for dep in dependencies:
+                if dep not in self._cache and dep not in to_process:
+                    to_process.append(dep)
+                    all_needed.add(dep)
+
+        # Build ordered list (dependencies first)
+        ordered = self._topological_sort(list(all_needed))
+
+        return [self._cache[ref] for ref in ordered if ref in self._cache], self._resolution_errors
+
+    def _topological_sort(self, mod_refs: List[str]) -> List[str]:
+        """
+        Sort mods so dependencies come before dependents.
+        SML always comes first.
+        """
+        # Simple approach: dependencies first based on depth
+        result = []
+        visited = set()
+
+        def visit(ref: str, depth: int = 0):
+            if ref in visited or depth > 50:  # Prevent infinite loops
+                return
+            visited.add(ref)
+
+            if ref in self._cache:
+                for dep in self._cache[ref].dependencies:
+                    visit(dep, depth + 1)
+
+            if ref not in result:
+                result.append(ref)
+
+        # SML first
+        if "SML" in mod_refs:
+            visit("SML")
+
+        # Then all others
+        for ref in mod_refs:
+            visit(ref)
+
+        return result
+
+    def get_all_required_refs(self) -> List[str]:
+        """Get all resolved mod references."""
+        return list(self._cache.keys())
+
+    def get_resolution_errors(self) -> Dict[str, str]:
+        """Get any errors encountered during resolution."""
+        return self._resolution_errors.copy()
+
+
+class ModScanner:
+    """
+    Scans the game's Mods directory to inventory installed mods
+    and verify their file integrity.
+    """
+
+    def __init__(self, mods_dir: Path):
+        self.mods_dir = Path(mods_dir)
+
+    def scan_installed(self) -> Dict[str, ModStatus]:
+        """
+        Scan the mods directory and return status of each installed mod.
+
+        Returns:
+            Dict mapping mod_reference to ModStatus
+        """
+        results: Dict[str, ModStatus] = {}
+
+        if not self.mods_dir.exists():
+            logger.warning(f"Mods directory does not exist: {self.mods_dir}")
+            return results
+
+        for item in self.mods_dir.iterdir():
+            if not item.is_dir():
+                continue
+
+            mod_ref = item.name
+            status = self._check_mod_directory(item, mod_ref)
+            results[mod_ref] = status
+
+        return results
+
+    def _check_mod_directory(self, mod_dir: Path, mod_ref: str) -> ModStatus:
+        """Check a single mod directory for validity."""
+        # Look for .uplugin file
+        uplugin_files = list(mod_dir.glob("*.uplugin"))
+        has_uplugin = len(uplugin_files) > 0
+
+        # Count pak files (in Content/Paks subdirectories)
+        pak_files = list(mod_dir.rglob("*.pak"))
+        pak_count = len(pak_files)
+
+        # Count dll files (Windows binaries)
+        dll_files = list(mod_dir.rglob("*.dll"))
+        dll_count = len(dll_files)
+
+        # Count .so files (Linux binaries)
+        so_files = list(mod_dir.rglob("*.so"))
+        so_count = len(so_files)
+
+        # Try to read version from uplugin
+        version = None
+        if uplugin_files:
+            try:
+                with open(uplugin_files[0], 'r', encoding='utf-8') as f:
+                    uplugin_data = json.load(f)
+                    version = uplugin_data.get("VersionName") or uplugin_data.get("Version")
+            except (json.JSONDecodeError, IOError):
+                pass
+
+        # Determine validity
+        # A mod is valid if it has either:
+        # - A .uplugin file (metadata)
+        # - OR pak files (content)
+        is_valid = has_uplugin or pak_count > 0
+
+        if not is_valid:
+            message = "Missing .uplugin and no pak files"
+        elif not has_uplugin:
+            message = "Missing .uplugin file (may still work)"
+        elif pak_count == 0:
+            message = "No pak files found (content-less mod?)"
+        else:
+            message = "Valid"
+
+        return ModStatus(
+            mod_reference=mod_ref,
+            installed=True,
+            valid=is_valid,
+            version=version,
+            has_uplugin=has_uplugin,
+            pak_count=pak_count,
+            dll_count=dll_count,
+            so_count=so_count,
+            message=message
+        )
+
+    def check_mod(self, mod_ref: str) -> ModStatus:
+        """Check status of a specific mod."""
+        mod_dir = self.mods_dir / mod_ref
+
+        if not mod_dir.exists():
+            return ModStatus(
+                mod_reference=mod_ref,
+                installed=False,
+                valid=False,
+                message="Not installed"
+            )
+
+        return self._check_mod_directory(mod_dir, mod_ref)
+
+    def get_missing_mods(self, required_refs: List[str]) -> List[str]:
+        """
+        Compare required mods against installed mods.
+
+        Returns:
+            List of mod references that are missing or invalid
+        """
+        installed = self.scan_installed()
+        missing = []
+
+        for ref in required_refs:
+            if ref not in installed:
+                missing.append(ref)
+            elif not installed[ref].valid:
+                missing.append(ref)
+
+        return missing
+
 
 class ModDownloader:
     """Downloads and extracts mods from ficsit.app."""
@@ -897,6 +1233,399 @@ class ModManager:
 
         shutil.copytree(self.mods_dir, backup_path)
         return str(backup_path)
+
+
+@dataclass
+class GapAnalysisResult:
+    """Result of comparing needed mods vs installed mods."""
+    needed_mods: List[str]
+    installed_mods: Dict[str, ModStatus]
+    missing_mods: List[str]
+    invalid_mods: List[str]
+    valid_mods: List[str]
+    resolution_errors: Dict[str, str]
+
+    @property
+    def all_ok(self) -> bool:
+        """True if no mods need to be installed or repaired."""
+        return len(self.missing_mods) == 0 and len(self.invalid_mods) == 0
+
+    @property
+    def mods_to_install(self) -> List[str]:
+        """List of mods that need to be installed or re-installed."""
+        return self.missing_mods + self.invalid_mods
+
+
+@dataclass
+class InstallPhaseResult:
+    """Result of an installation phase."""
+    phase_name: str
+    success: bool
+    message: str
+    details: List[str]
+
+
+class PreVerifyInstaller:
+    """
+    Pre-verification based mod installer.
+    Resolves dependencies, scans installed mods, identifies gaps,
+    and performs targeted repair/installation.
+    """
+
+    def __init__(self, game_path: str):
+        self.game_path = Path(game_path)
+        self.mods_dir = self.game_path / "FactoryGame" / "Mods"
+        self.mods_dir.mkdir(parents=True, exist_ok=True)
+
+        self.api_client = FicsitAPIClient()
+        self.resolver = DependencyResolver(self.api_client)
+        self.scanner = ModScanner(self.mods_dir)
+        self.downloader = ModDownloader(str(self.mods_dir))
+
+        # Results tracking
+        self.resolved_mods: Dict[str, ResolvedMod] = {}
+        self.gap_analysis: Optional[GapAnalysisResult] = None
+
+    def phase1_resolve_dependencies(
+        self,
+        mod_references: List[str],
+        progress_callback: Optional[Callable[[str, str], None]] = None
+    ) -> InstallPhaseResult:
+        """
+        Phase 1: Resolve all dependencies from ficsit.app API.
+
+        Returns:
+            InstallPhaseResult with resolution status
+        """
+        details = []
+        details.append(f"Resolving dependencies for {len(mod_references)} selected mods...")
+
+        if progress_callback:
+            progress_callback("", "Phase 1: Resolving dependencies...")
+
+        resolved_list, errors = self.resolver.resolve_all(mod_references, progress_callback)
+
+        # Store resolved mods for later phases
+        self.resolved_mods = {m.mod_reference: m for m in resolved_list}
+
+        details.append(f"Resolved {len(resolved_list)} mods (including dependencies)")
+
+        if errors:
+            for ref, error in errors.items():
+                details.append(f"  [WARN] {ref}: {error}")
+
+        # Check for mods without Windows targets
+        no_windows = [m for m in resolved_list if not m.has_windows_target]
+        if no_windows:
+            for m in no_windows:
+                details.append(f"  [WARN] {m.mod_reference}: No Windows version available")
+
+        success = len(resolved_list) > 0
+        message = f"Resolved {len(resolved_list)} mods" if success else "Failed to resolve any mods"
+
+        return InstallPhaseResult(
+            phase_name="Dependency Resolution",
+            success=success,
+            message=message,
+            details=details
+        )
+
+    def phase2_scan_installed(
+        self,
+        progress_callback: Optional[Callable[[str, str], None]] = None
+    ) -> InstallPhaseResult:
+        """
+        Phase 2: Scan currently installed mods.
+
+        Returns:
+            InstallPhaseResult with scan status
+        """
+        details = []
+
+        if progress_callback:
+            progress_callback("", "Phase 2: Scanning installed mods...")
+
+        installed = self.scanner.scan_installed()
+
+        details.append(f"Found {len(installed)} installed mod folders")
+
+        valid_count = sum(1 for s in installed.values() if s.valid)
+        invalid_count = sum(1 for s in installed.values() if not s.valid)
+
+        details.append(f"  Valid: {valid_count}")
+        details.append(f"  Invalid/Incomplete: {invalid_count}")
+
+        for ref, status in installed.items():
+            if status.valid:
+                details.append(f"  [OK] {ref} v{status.version or 'unknown'}")
+            else:
+                details.append(f"  [!!] {ref}: {status.message}")
+
+        return InstallPhaseResult(
+            phase_name="Mod Scan",
+            success=True,
+            message=f"Scanned {len(installed)} installed mods",
+            details=details
+        )
+
+    def phase3_gap_analysis(
+        self,
+        progress_callback: Optional[Callable[[str, str], None]] = None
+    ) -> InstallPhaseResult:
+        """
+        Phase 3: Compare needed mods vs installed mods.
+
+        Returns:
+            InstallPhaseResult with gap analysis
+        """
+        details = []
+
+        if progress_callback:
+            progress_callback("", "Phase 3: Analyzing gaps...")
+
+        # Get what we need
+        needed_refs = list(self.resolved_mods.keys())
+        installed = self.scanner.scan_installed()
+
+        missing = []
+        invalid = []
+        valid = []
+
+        for ref in needed_refs:
+            if ref not in installed:
+                missing.append(ref)
+            elif not installed[ref].valid:
+                invalid.append(ref)
+            else:
+                valid.append(ref)
+
+        # Store result
+        self.gap_analysis = GapAnalysisResult(
+            needed_mods=needed_refs,
+            installed_mods=installed,
+            missing_mods=missing,
+            invalid_mods=invalid,
+            valid_mods=valid,
+            resolution_errors=self.resolver.get_resolution_errors()
+        )
+
+        details.append(f"Need {len(needed_refs)} mods total")
+        details.append(f"  Already valid: {len(valid)}")
+        details.append(f"  Missing: {len(missing)}")
+        details.append(f"  Invalid/needs repair: {len(invalid)}")
+
+        if missing:
+            details.append("Missing mods:")
+            for ref in missing:
+                details.append(f"  - {ref}")
+
+        if invalid:
+            details.append("Invalid mods (will be re-downloaded):")
+            for ref in invalid:
+                details.append(f"  - {ref}")
+
+        if self.gap_analysis.all_ok:
+            message = "All required mods are already installed and valid!"
+        else:
+            message = f"{len(missing) + len(invalid)} mods need to be installed/repaired"
+
+        return InstallPhaseResult(
+            phase_name="Gap Analysis",
+            success=True,
+            message=message,
+            details=details
+        )
+
+    def phase4_install_missing(
+        self,
+        progress_callback: Optional[Callable[[str, str], None]] = None,
+        download_progress_callback: Optional[Callable[[int, int], None]] = None
+    ) -> InstallPhaseResult:
+        """
+        Phase 4: Download and install missing/invalid mods.
+
+        Returns:
+            InstallPhaseResult with installation status
+        """
+        details = []
+
+        if not self.gap_analysis:
+            return InstallPhaseResult(
+                phase_name="Install Missing",
+                success=False,
+                message="Gap analysis not performed",
+                details=["Run phase 3 first"]
+            )
+
+        mods_to_install = self.gap_analysis.mods_to_install
+
+        if not mods_to_install:
+            return InstallPhaseResult(
+                phase_name="Install Missing",
+                success=True,
+                message="No mods need to be installed",
+                details=["All required mods are already present"]
+            )
+
+        if progress_callback:
+            progress_callback("", f"Phase 4: Installing {len(mods_to_install)} mods...")
+
+        details.append(f"Installing {len(mods_to_install)} mods...")
+
+        success_count = 0
+        fail_count = 0
+        failed_mods = []
+
+        for i, ref in enumerate(mods_to_install):
+            if progress_callback:
+                progress_callback(ref, f"Installing {ref} ({i+1}/{len(mods_to_install)})...")
+
+            resolved = self.resolved_mods.get(ref)
+            if not resolved or not resolved.download_url:
+                details.append(f"  [SKIP] {ref}: No download URL available")
+                fail_count += 1
+                failed_mods.append(ref)
+                continue
+
+            result = self.downloader.download_and_install(
+                ref,
+                resolved.download_url,
+                download_progress_callback
+            )
+
+            if result.success:
+                details.append(f"  [OK] {ref} v{resolved.version}: {result.message}")
+                success_count += 1
+            else:
+                details.append(f"  [FAIL] {ref}: {result.message}")
+                fail_count += 1
+                failed_mods.append(ref)
+
+        success = fail_count == 0
+        message = f"Installed {success_count}/{len(mods_to_install)} mods"
+        if failed_mods:
+            message += f" ({fail_count} failed)"
+
+        return InstallPhaseResult(
+            phase_name="Install Missing",
+            success=success,
+            message=message,
+            details=details
+        )
+
+    def phase5_final_verify(
+        self,
+        progress_callback: Optional[Callable[[str, str], None]] = None
+    ) -> InstallPhaseResult:
+        """
+        Phase 5: Final verification that all required mods are correctly installed.
+
+        Returns:
+            InstallPhaseResult with final verification status
+        """
+        details = []
+
+        if progress_callback:
+            progress_callback("", "Phase 5: Final verification...")
+
+        needed_refs = list(self.resolved_mods.keys())
+        installed = self.scanner.scan_installed()
+
+        all_valid = True
+        still_missing = []
+        still_invalid = []
+
+        for ref in needed_refs:
+            if ref not in installed:
+                still_missing.append(ref)
+                all_valid = False
+            elif not installed[ref].valid:
+                still_invalid.append(ref)
+                all_valid = False
+            else:
+                status = installed[ref]
+                details.append(f"  [OK] {ref}: {status.pak_count} pak, {status.dll_count} dll")
+
+        if still_missing:
+            details.append("STILL MISSING:")
+            for ref in still_missing:
+                details.append(f"  [!!] {ref}")
+
+        if still_invalid:
+            details.append("STILL INVALID:")
+            for ref in still_invalid:
+                status = installed.get(ref)
+                msg = status.message if status else "Unknown"
+                details.append(f"  [!!] {ref}: {msg}")
+
+        if all_valid:
+            message = f"All {len(needed_refs)} required mods are correctly installed!"
+        else:
+            message = f"VERIFICATION FAILED: {len(still_missing)} missing, {len(still_invalid)} invalid"
+
+        return InstallPhaseResult(
+            phase_name="Final Verification",
+            success=all_valid,
+            message=message,
+            details=details
+        )
+
+    def run_full_installation(
+        self,
+        mod_references: List[str],
+        progress_callback: Optional[Callable[[str, str], None]] = None,
+        download_progress_callback: Optional[Callable[[int, int], None]] = None
+    ) -> Tuple[bool, List[InstallPhaseResult]]:
+        """
+        Run the complete pre-verify, repair, install workflow.
+
+        Args:
+            mod_references: List of mod references to install
+            progress_callback: Optional callback(mod_ref, status_message)
+            download_progress_callback: Optional callback(downloaded_bytes, total_bytes)
+
+        Returns:
+            Tuple of (overall_success, list of phase results)
+        """
+        phases = []
+
+        # Phase 1: Resolve dependencies
+        result = self.phase1_resolve_dependencies(mod_references, progress_callback)
+        phases.append(result)
+        if not result.success:
+            return False, phases
+
+        # Phase 2: Scan installed
+        result = self.phase2_scan_installed(progress_callback)
+        phases.append(result)
+
+        # Phase 3: Gap analysis
+        result = self.phase3_gap_analysis(progress_callback)
+        phases.append(result)
+
+        # Phase 4: Install missing (if any)
+        if self.gap_analysis and not self.gap_analysis.all_ok:
+            result = self.phase4_install_missing(progress_callback, download_progress_callback)
+            phases.append(result)
+
+        # Phase 5: Final verification
+        result = self.phase5_final_verify(progress_callback)
+        phases.append(result)
+
+        overall_success = result.success
+        return overall_success, phases
+
+    def get_needed_mods_summary(self) -> str:
+        """Get a summary of what mods are needed and their status."""
+        if not self.gap_analysis:
+            return "Gap analysis not performed yet"
+
+        lines = [
+            f"Total needed: {len(self.gap_analysis.needed_mods)}",
+            f"Already valid: {len(self.gap_analysis.valid_mods)}",
+            f"Need to install: {len(self.gap_analysis.mods_to_install)}",
+        ]
+        return "\n".join(lines)
 
 
 def get_embedded_mods_config() -> List[Dict]:
