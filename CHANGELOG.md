@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.2] - 2024-12-30
+
+### Fixed (Client Mod Installer)
+
+- **Critical fix: ficsit-cli profile command syntax**
+  - Root cause: Used `profile create` but ficsit-cli uses `profile new`
+  - This caused profile creation to fail, making all subsequent mod additions fail
+  - All 22 mods were reported as "failed via ficsit-cli" because the profile didn't exist
+  - Mods appeared installed because they were from previous direct-download attempts
+
+### Improved
+
+- Better error logging for ficsit-cli commands (captures both stdout and stderr)
+- More detailed debug logging to help diagnose future issues
+
 ## [1.1.1] - 2024-12-30
 
 ### Fixed (Client Mod Installer)

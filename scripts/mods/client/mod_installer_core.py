@@ -198,7 +198,8 @@ class FicsitCLI:
             return False, "ficsit-cli not available"
         
         cmd = [str(self.cli_path)] + args
-        logger.debug(f"Running: {' '.join(cmd)}")
+        cmd_str = ' '.join(cmd)
+        logger.debug(f"Running ficsit-cli: {cmd_str}")
         
         try:
             if platform.system() == "Windows":
@@ -221,14 +222,27 @@ class FicsitCLI:
                 )
             
             if result.returncode == 0:
+                if capture_output and result.stdout:
+                    logger.debug(f"ficsit-cli stdout: {result.stdout.strip()}")
                 return True, result.stdout if capture_output else ""
             else:
-                error_msg = result.stderr if capture_output else f"Exit code: {result.returncode}"
+                # Capture both stderr and stdout for better error messages
+                error_parts = []
+                if capture_output:
+                    if result.stderr:
+                        error_parts.append(result.stderr.strip())
+                    if result.stdout:
+                        error_parts.append(result.stdout.strip())
+                error_msg = " | ".join(error_parts) if error_parts else f"Exit code: {result.returncode}"
+                logger.warning(f"ficsit-cli command failed: {cmd_str}")
+                logger.warning(f"ficsit-cli error: {error_msg}")
                 return False, error_msg
                 
         except subprocess.TimeoutExpired:
+            logger.error(f"ficsit-cli command timed out: {cmd_str}")
             return False, "Command timed out"
         except Exception as e:
+            logger.error(f"ficsit-cli exception: {e}")
             return False, str(e)
     
     def add_installation(self, game_path: str) -> Tuple[bool, str]:
@@ -243,7 +257,8 @@ class FicsitCLI:
     def create_profile(self, profile_name: Optional[str] = None) -> Tuple[bool, str]:
         """Create a mod profile."""
         name = profile_name or self.PROFILE_NAME
-        success, output = self._run_command(["profile", "create", name])
+        # Note: ficsit-cli uses "new" not "create" for profile creation
+        success, output = self._run_command(["profile", "new", name])
         if success:
             return True, f"Created profile: {name}"
         elif "already exists" in output.lower():
@@ -303,6 +318,8 @@ class FicsitCLI:
         if not success:
             logger.error(f"Failed to create profile: {msg}")
             return False, [], mod_references
+        
+        logger.info(f"Profile ready: {msg}")
         
         # Step 3: Add each mod to the profile
         for mod_ref in mod_references:

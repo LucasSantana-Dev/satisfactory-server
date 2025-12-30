@@ -274,7 +274,7 @@ class ModInstallerApp(ctk.CTk):
             try:
                 self.after(0, lambda: self.log("[INFO] Initializing ficsit-cli (official mod tool)..."))
                 cli = FicsitCLI()
-                
+
                 if cli.is_available():
                     self.ficsit_cli = cli
                     version = cli.get_version() or "unknown"
@@ -491,20 +491,20 @@ class ModInstallerApp(ctk.CTk):
         # Only add "leaf" mods (non-dependencies) and let ficsit-cli resolve deps
         leaf_mods = [m for m in selected_mods if m.category != "dependency"]
         dependency_mods = [m for m in selected_mods if m.category == "dependency"]
-        
+
         if dependency_mods:
             dep_names = ", ".join([m.name for m in dependency_mods[:3]])
             if len(dependency_mods) > 3:
                 dep_names += f", and {len(dependency_mods) - 3} more"
             self.after(0, lambda: self.log(f"[INFO] ficsit-cli will auto-install dependencies: {dep_names}"))
-        
+
         mod_refs = [mod.mod_reference for mod in leaf_mods]
-        
+
         if not mod_refs:
             self.after(0, lambda: self.log("[WARN] No non-dependency mods to install"))
             self.after(0, lambda: self._on_installation_complete(0, 0, len(selected_mods)))
             return
-        
+
         def progress_callback(mod_ref: str, status: str):
             self.after(0, lambda: self.log(f"[....] {status}"))
             # Update progress bar
@@ -525,7 +525,7 @@ class ModInstallerApp(ctk.CTk):
 
             # Count dependencies as successful since ficsit-cli auto-installs them
             total_successful = len(successful_mods) + len(dependency_mods)
-            
+
             if success:
                 self.after(0, lambda: self.log(f"[OK] ficsit-cli installed {len(successful_mods)} mods + {len(dependency_mods)} auto-resolved dependencies"))
                 self.after(0, lambda: self._on_installation_complete(
@@ -535,7 +535,7 @@ class ModInstallerApp(ctk.CTk):
                 # Log failures and try fallback for failed mods
                 for failed_ref in failed_mods:
                     self.after(0, lambda r=failed_ref: self.log(f"[WARN] {r} failed via ficsit-cli"))
-                
+
                 if failed_mods and len(successful_mods) > 0:
                     self.after(0, lambda: self.log("[INFO] Trying fallback for failed mods..."))
                     # Get the failed mod objects (only from leaf mods, not dependencies)
