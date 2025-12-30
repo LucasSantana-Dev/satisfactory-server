@@ -1742,7 +1742,7 @@ def get_embedded_mods_config() -> List[Dict]:
     Return embedded mod configuration for standalone executable.
     This is used when mods-list.json is not available.
     Synced with server mods-list.json - 44 mods total.
-    
+
     NOTE: Removed mods (no longer available or broken):
     - Smart! (SmartFoundations) - no longer on ficsit.app
     - ContainerScreen - no longer on ficsit.app
