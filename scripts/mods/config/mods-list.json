@@ -81,14 +81,6 @@
       "description": "Content library required by FlexSplines and other mods."
     },
     {
-      "name": "Smart!",
-      "mod_reference": "SmartFoundations",
-      "category": "quality-of-life",
-      "required": false,
-      "priority": 2,
-      "description": "Mass building of foundations, walls, and more"
-    },
-    {
       "name": "Efficiency Checker Mod",
       "mod_reference": "EfficiencyCheckerMod",
       "category": "quality-of-life",
@@ -279,14 +271,6 @@
       "required": false,
       "priority": 3,
       "description": "Large storage tanks for fluids"
-    },
-    {
-      "name": "Container Screens",
-      "mod_reference": "ContainerScreen",
-      "category": "content",
-      "required": false,
-      "priority": 3,
-      "description": "Display screens for containers"
     },
     {
       "name": "Item Dispenser",

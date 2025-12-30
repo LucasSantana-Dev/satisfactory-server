@@ -1754,7 +1754,7 @@ def get_embedded_mods_config() -> List[Dict]:
         {"name": "Refined R&D Lib", "mod_reference": "RefinedRDLib", "category": "dependency", "required": True, "priority": 1, "description": "Required by Refined Power, Ficsit Farming"},
         {"name": "avMall Lib", "mod_reference": "avMallLib", "category": "dependency", "required": True, "priority": 1, "description": "Required by Item Dispenser"},
         # Quality of Life mods (priority 2)
-        {"name": "Smart!", "mod_reference": "SmartFoundations", "category": "quality-of-life", "required": False, "priority": 2, "description": "Mass building of foundations, walls, and more"},
+        # NOTE: Smart! removed - no longer available on ficsit.app
         # NOTE: MicroManage removed - marked as BROKEN on ficsit.app
         {"name": "Efficiency Checker", "mod_reference": "EfficiencyCheckerMod", "category": "quality-of-life", "required": False, "priority": 2, "description": "Monitor production efficiency"},
         {"name": "Infinite Zoop", "mod_reference": "InfiniteZoop", "category": "quality-of-life", "required": False, "priority": 2, "description": "Unlimited zoop range"},
@@ -1772,7 +1772,7 @@ def get_embedded_mods_config() -> List[Dict]:
         {"name": "Fluid Extras", "mod_reference": "AB_FluidExtras", "category": "content", "required": False, "priority": 3, "description": "Additional fluid handling"},
         {"name": "Storage Teleporter", "mod_reference": "StorageTeleporter", "category": "content", "required": False, "priority": 3, "description": "Teleport items between storage"},
         {"name": "Big Storage Tank", "mod_reference": "BigStorageTank", "category": "content", "required": False, "priority": 3, "description": "Large fluid storage"},
-        {"name": "Container Screens", "mod_reference": "ContainerScreen", "category": "content", "required": False, "priority": 3, "description": "Display screens for containers"},
+        # NOTE: ContainerScreen removed - no longer available on ficsit.app
         {"name": "Item Dispenser", "mod_reference": "Dispenser", "category": "content", "required": False, "priority": 3, "description": "Automatic item dispensing"},
         # Cheat mods (priority 4)
         {"name": "EasyCheat", "mod_reference": "EasyCheat", "category": "cheat", "required": False, "priority": 4, "description": "Cheat menu"},
