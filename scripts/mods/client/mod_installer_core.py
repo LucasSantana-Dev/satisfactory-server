@@ -1741,21 +1741,29 @@ def get_embedded_mods_config() -> List[Dict]:
     """
     Return embedded mod configuration for standalone executable.
     This is used when mods-list.json is not available.
+    Synced with server mods-list.json - 44 mods total.
+    
+    NOTE: Removed mods (no longer available or broken):
+    - Smart! (SmartFoundations) - no longer on ficsit.app
+    - ContainerScreen - no longer on ficsit.app
+    - MicroManage - marked as BROKEN
+    - PowerSuit - marked as BROKEN
+    - Teleporter - marked as BROKEN
+    - MK22k20 (Mk++) - marked as BROKEN
     """
     return [
-        # Core dependencies (priority 0-1)
+        # Core dependencies (priority 0-1) - 10 mods
         {"name": "Satisfactory Mod Loader", "mod_reference": "SML", "category": "dependency", "required": True, "priority": 0, "description": "Required for ALL mods"},
         {"name": "Pak Utility Mod", "mod_reference": "UtilityMod", "category": "dependency", "required": True, "priority": 1, "description": "Required dependency for most mods"},
-        {"name": "Mod Update Notifier", "mod_reference": "ModUpdateNotifier", "category": "dependency", "required": True, "priority": 1, "description": "Required by Additional_300_Inventory_Slots"},
+        {"name": "Mod Update Notifier", "mod_reference": "ModUpdateNotifier", "category": "dependency", "required": True, "priority": 1, "description": "Notifies of mod updates"},
         {"name": "Marcio Common Libs", "mod_reference": "MarcioCommonLibs", "category": "dependency", "required": True, "priority": 1, "description": "Required by Efficiency Checker"},
         {"name": "MinoDabs Common Lib", "mod_reference": "MinoDabsCommonLib", "category": "dependency", "required": True, "priority": 1, "description": "Required by Additional_300_Inventory_Slots"},
         {"name": "Modular UI", "mod_reference": "ModularUI", "category": "dependency", "required": True, "priority": 1, "description": "Required by Refined Power, Ficsit Farming"},
         {"name": "Refined R&D API", "mod_reference": "RefinedRDApi", "category": "dependency", "required": True, "priority": 1, "description": "Required by Refined Power, Ficsit Farming"},
         {"name": "Refined R&D Lib", "mod_reference": "RefinedRDLib", "category": "dependency", "required": True, "priority": 1, "description": "Required by Refined Power, Ficsit Farming"},
         {"name": "avMall Lib", "mod_reference": "avMallLib", "category": "dependency", "required": True, "priority": 1, "description": "Required by Item Dispenser"},
-        # Quality of Life mods (priority 2)
-        # NOTE: Smart! removed - no longer available on ficsit.app
-        # NOTE: MicroManage removed - marked as BROKEN on ficsit.app
+        {"name": "ContentLib", "mod_reference": "ContentLib", "category": "dependency", "required": True, "priority": 1, "description": "Content library for FlexSplines and other mods"},
+        # Quality of Life mods (priority 2) - 18 mods
         {"name": "Efficiency Checker", "mod_reference": "EfficiencyCheckerMod", "category": "quality-of-life", "required": False, "priority": 2, "description": "Monitor production efficiency"},
         {"name": "Infinite Zoop", "mod_reference": "InfiniteZoop", "category": "quality-of-life", "required": False, "priority": 2, "description": "Unlimited zoop range"},
         {"name": "Infinite Nudge", "mod_reference": "InfiniteNudge", "category": "quality-of-life", "required": False, "priority": 2, "description": "Unlimited nudge range"},
@@ -1763,21 +1771,35 @@ def get_embedded_mods_config() -> List[Dict]:
         {"name": "Load Balancers", "mod_reference": "LoadBalancers", "category": "quality-of-life", "required": False, "priority": 2, "description": "Better load balancing"},
         {"name": "MAM Enhancer", "mod_reference": "MAMTips", "category": "quality-of-life", "required": False, "priority": 2, "description": "Enhanced MAM interface"},
         {"name": "MiniMap", "mod_reference": "MiniMap", "category": "quality-of-life", "required": False, "priority": 2, "description": "In-game minimap"},
-        # Content mods (priority 3)
+        {"name": "Floor Hole", "mod_reference": "FloorHole", "category": "quality-of-life", "required": False, "priority": 2, "description": "Pass conveyors through floors"},
+        {"name": "Conveyor Wall Hole", "mod_reference": "WallHoleConveyor", "category": "quality-of-life", "required": False, "priority": 2, "description": "Holes in walls for conveyors"},
+        {"name": "Flex Splines", "mod_reference": "FlexSplines", "category": "quality-of-life", "required": False, "priority": 2, "description": "Longer conveyors and pipes"},
+        {"name": "Daisy Chain Power", "mod_reference": "DaisyChainPowerCables", "category": "quality-of-life", "required": False, "priority": 2, "description": "4 power connections for daisy-chaining"},
+        {"name": "Covered Conveyor Belts", "mod_reference": "CoveredConveyor", "category": "quality-of-life", "required": False, "priority": 2, "description": "Aesthetic covered conveyor belts"},
+        {"name": "Underground Belts", "mod_reference": "UndergroundBelts", "category": "quality-of-life", "required": False, "priority": 2, "description": "Hidden underground conveyor belts"},
+        {"name": "Wall Pipe Supports", "mod_reference": "WallPipeSupports", "category": "quality-of-life", "required": False, "priority": 2, "description": "Additional wall pipe supports"},
+        {"name": "Upside Down Foundations", "mod_reference": "UpsideDownFoundations", "category": "quality-of-life", "required": False, "priority": 2, "description": "More foundation options"},
+        {"name": "Power Checker", "mod_reference": "PowerChecker", "category": "quality-of-life", "required": False, "priority": 2, "description": "Monitor power consumption"},
+        {"name": "Throughput Counter", "mod_reference": "CounterLimiter", "category": "quality-of-life", "required": False, "priority": 2, "description": "Display and limit item throughput"},
+        {"name": "FicsIt-Networks", "mod_reference": "FicsItNetworks", "category": "quality-of-life", "required": False, "priority": 2, "description": "Lua scripting for automation"},
+        # Content mods (priority 3) - 11 mods
         {"name": "Refined Power", "mod_reference": "RefinedPower", "category": "content", "required": False, "priority": 3, "description": "New power generation options"},
         {"name": "Ficsit Farming", "mod_reference": "FicsitFarming", "category": "content", "required": False, "priority": 3, "description": "Farming mechanics"},
-        # NOTE: Teleporter removed - marked as BROKEN on ficsit.app
         {"name": "Linear Motion", "mod_reference": "LinearMotion", "category": "content", "required": False, "priority": 3, "description": "Moving platforms and elevators"},
-        # NOTE: MK22k20 (Mk++) removed - marked as BROKEN on ficsit.app
         {"name": "Fluid Extras", "mod_reference": "AB_FluidExtras", "category": "content", "required": False, "priority": 3, "description": "Additional fluid handling"},
         {"name": "Storage Teleporter", "mod_reference": "StorageTeleporter", "category": "content", "required": False, "priority": 3, "description": "Teleport items between storage"},
         {"name": "Big Storage Tank", "mod_reference": "BigStorageTank", "category": "content", "required": False, "priority": 3, "description": "Large fluid storage"},
-        # NOTE: ContainerScreen removed - no longer available on ficsit.app
         {"name": "Item Dispenser", "mod_reference": "Dispenser", "category": "content", "required": False, "priority": 3, "description": "Automatic item dispensing"},
-        # Cheat mods (priority 4)
+        {"name": "Magic Machines", "mod_reference": "MagicMachine", "category": "content", "required": False, "priority": 3, "description": "Spawners for fluids, solids, energy"},
+        {"name": "Faster Manual Crafting", "mod_reference": "FasterManualCraftingRedux", "category": "content", "required": False, "priority": 3, "description": "Speed up manual crafting"},
+        {"name": "Advanced Logistics", "mod_reference": "AdvancedLogistics", "category": "content", "required": False, "priority": 3, "description": "Programmable splitters and mergers"},
+        {"name": "Fluid Sink", "mod_reference": "FluidSink", "category": "content", "required": False, "priority": 3, "description": "Sink fluids and overflow valves"},
+        # Cheat mods (priority 4) - 5 mods
         {"name": "EasyCheat", "mod_reference": "EasyCheat", "category": "cheat", "required": False, "priority": 4, "description": "Cheat menu"},
         {"name": "Extra Inventory", "mod_reference": "Additional_300_Inventory_Slots", "category": "cheat", "required": False, "priority": 4, "description": "300 extra inventory slots"},
-        # NOTE: PowerSuit removed - marked as BROKEN on ficsit.app, incompatible with current game
+        {"name": "Unlock All Recipes", "mod_reference": "UnlockAllAlternateRecipes", "category": "cheat", "required": False, "priority": 4, "description": "Unlock all alternate recipes"},
+        {"name": "Item Spawner", "mod_reference": "ItemSpawner", "category": "cheat", "required": False, "priority": 4, "description": "Spawn any item in-game"},
+        {"name": "All Nodes Pure", "mod_reference": "AllNodesPure", "category": "cheat", "required": False, "priority": 4, "description": "All resource nodes are pure"},
     ]
 
 
