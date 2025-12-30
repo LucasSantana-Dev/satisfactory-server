@@ -16,6 +16,9 @@ on:
   release:
     types: [created]
 
+permissions:
+  contents: write  # Required for creating releases and uploading assets
+
 env:
   PYTHON_VERSION: '3.11'
   APP_NAME: 'SatisfactoryModInstaller'
@@ -218,11 +221,9 @@ jobs:
       # ========================================
       - name: Upload to GitHub Release
         if: github.event_name == 'release'
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           files: scripts/mods/client/dist/${{ env.APP_NAME }}.exe
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # ========================================
   # CREATE RELEASE ON TAG
@@ -245,11 +246,9 @@ jobs:
           ls -la
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           files: ${{ env.APP_NAME }}.exe
           generate_release_notes: true
           draft: false
           prerelease: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
