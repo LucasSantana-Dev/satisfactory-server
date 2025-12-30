@@ -17,6 +17,62 @@
       "description": "Required dependency for most mods. Must be installed first."
     },
     {
+      "name": "Mod Update Notifier",
+      "mod_reference": "ModUpdateNotifier",
+      "category": "dependency",
+      "required": true,
+      "priority": 1,
+      "description": "Required by Additional_300_Inventory_Slots. Notifies of mod updates."
+    },
+    {
+      "name": "Marcio Common Libs",
+      "mod_reference": "MarcioCommonLibs",
+      "category": "dependency",
+      "required": true,
+      "priority": 1,
+      "description": "Required by Efficiency Checker Mod."
+    },
+    {
+      "name": "MinoDabs Common Lib",
+      "mod_reference": "MinoDabsCommonLib",
+      "category": "dependency",
+      "required": true,
+      "priority": 1,
+      "description": "Required by Additional_300_Inventory_Slots."
+    },
+    {
+      "name": "Modular UI",
+      "mod_reference": "ModularUI",
+      "category": "dependency",
+      "required": true,
+      "priority": 1,
+      "description": "Required by Refined Power and Ficsit Farming."
+    },
+    {
+      "name": "Refined R&D API",
+      "mod_reference": "RefinedRDApi",
+      "category": "dependency",
+      "required": true,
+      "priority": 1,
+      "description": "Required by Refined Power and Ficsit Farming."
+    },
+    {
+      "name": "Refined R&D Lib",
+      "mod_reference": "RefinedRDLib",
+      "category": "dependency",
+      "required": true,
+      "priority": 1,
+      "description": "Required by Refined Power and Ficsit Farming."
+    },
+    {
+      "name": "avMall Lib",
+      "mod_reference": "avMallLib",
+      "category": "dependency",
+      "required": true,
+      "priority": 1,
+      "description": "Required by Item Dispenser."
+    },
+    {
       "name": "Smart!",
       "mod_reference": "SmartFoundations",
       "category": "quality-of-life",

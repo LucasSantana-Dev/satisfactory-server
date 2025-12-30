@@ -17,13 +17,13 @@ import customtkinter as ctk
 try:
     from mod_installer_core import (
         GamePathDetector, ModManager, Mod, InstallResult,
-        FicsitAPIClient, get_embedded_mods_config
+        FicsitAPIClient, FicsitCLI, get_embedded_mods_config
     )
 except ImportError:
     # When running as packaged exe, might need different import
     from .mod_installer_core import (
         GamePathDetector, ModManager, Mod, InstallResult,
-        FicsitAPIClient, get_embedded_mods_config
+        FicsitAPIClient, FicsitCLI, get_embedded_mods_config
     )
 
 
@@ -55,14 +55,17 @@ class ModInstallerApp(ctk.CTk):
         # State
         self.game_path: Optional[str] = None
         self.mod_manager: Optional[ModManager] = None
+        self.ficsit_cli: Optional[FicsitCLI] = None
         self.mod_checkboxes: Dict[str, ctk.CTkCheckBox] = {}
         self.mod_vars: Dict[str, ctk.BooleanVar] = {}
         self.is_installing = False
         self.install_queue = queue.Queue()
+        self.use_ficsit_cli = True  # Prefer ficsit-cli over direct download
 
         # Setup UI
         self._create_widgets()
         self._detect_game_path()
+        self._init_ficsit_cli()
 
     def _create_widgets(self):
         """Create all UI widgets."""
@@ -265,6 +268,26 @@ class ModInstallerApp(ctk.CTk):
 
         threading.Thread(target=detect_thread, daemon=True).start()
 
+    def _init_ficsit_cli(self):
+        """Initialize ficsit-cli tool in background."""
+        def init_thread():
+            try:
+                self.after(0, lambda: self.log("[INFO] Initializing ficsit-cli (official mod tool)..."))
+                cli = FicsitCLI()
+                
+                if cli.is_available():
+                    self.ficsit_cli = cli
+                    version = cli.get_version() or "unknown"
+                    self.after(0, lambda: self.log(f"[OK] ficsit-cli ready (version: {version})"))
+                else:
+                    self.after(0, lambda: self.log("[WARN] ficsit-cli not available, will use fallback method"))
+                    self.use_ficsit_cli = False
+            except Exception as e:
+                self.after(0, lambda: self.log(f"[WARN] ficsit-cli init failed: {e}"))
+                self.use_ficsit_cli = False
+
+        threading.Thread(target=init_thread, daemon=True).start()
+
     def _on_path_detected(self, path: Optional[str]):
         """Handle detected game path."""
         if path:
@@ -446,52 +469,127 @@ class ModInstallerApp(ctk.CTk):
         except Exception as e:
             self.log(f"[WARN] Backup failed: {e}")
 
-        # Start installation thread
-        def install_thread():
-            success_count = 0
-            fail_count = 0
-            skip_count = 0
+        # Decide which installation method to use
+        if self.use_ficsit_cli and self.ficsit_cli and self.ficsit_cli.is_available():
+            self.log("[INFO] Using ficsit-cli (official tool) for installation")
+            threading.Thread(
+                target=self._install_with_ficsit_cli,
+                args=(selected_mods,),
+                daemon=True
+            ).start()
+        else:
+            self.log("[INFO] Using direct download method")
+            threading.Thread(
+                target=self._install_with_direct_download,
+                args=(selected_mods,),
+                daemon=True
+            ).start()
 
-            total = len(selected_mods)
-            for i, mod in enumerate(selected_mods):
-                progress = i / total
-                self.after(0, lambda p=progress, m=mod.name: self._update_progress(p, f"Fetching {m}..."))
+    def _install_with_ficsit_cli(self, selected_mods: List[Mod]):
+        """Install mods using the official ficsit-cli tool."""
+        mod_refs = [mod.mod_reference for mod in selected_mods]
+        
+        def progress_callback(mod_ref: str, status: str):
+            self.after(0, lambda: self.log(f"[....] {status}"))
+            # Update progress bar
+            if mod_ref:
+                try:
+                    idx = mod_refs.index(mod_ref)
+                    progress = idx / len(mod_refs)
+                    self.after(0, lambda p=progress: self._update_progress(p, status))
+                except ValueError:
+                    pass
 
-                # Fetch mod info
-                has_windows = self.mod_manager.fetch_mod_info(mod)
+        try:
+            success, successful_mods, failed_mods = self.ficsit_cli.install_mods(
+                self.game_path,
+                mod_refs,
+                progress_callback
+            )
 
-                if not has_windows:
-                    self.after(0, lambda m=mod.name: self.log(f"[SKIP] {m} - No Windows version"))
-                    skip_count += 1
-                    continue
-
-                self.after(0, lambda m=mod.name, v=mod.version: self.log(f"[....] Downloading {m} v{v}..."))
-
-                # Download and install
-                def progress_callback(downloaded, total_bytes):
-                    if total_bytes > 0:
-                        pct = downloaded / total_bytes
-                        self.after(0, lambda p=progress + (pct / total): self._update_progress(
-                            p, f"Downloading... {downloaded // 1024}KB / {total_bytes // 1024}KB"
-                        ))
-
-                result = self.mod_manager.install_mod(mod, progress_callback)
-
-                if result.success:
-                    self.after(0, lambda m=mod.name, r=result: self.log(
-                        f"[OK] {m} v{r.version} - {r.message}"
-                    ))
-                    success_count += 1
+            if success:
+                self.after(0, lambda: self._on_installation_complete(
+                    len(successful_mods), len(failed_mods), 0
+                ))
+            else:
+                # Log failures and try fallback for failed mods
+                for failed_ref in failed_mods:
+                    self.after(0, lambda r=failed_ref: self.log(f"[WARN] {r} failed via ficsit-cli"))
+                
+                if failed_mods and len(successful_mods) > 0:
+                    self.after(0, lambda: self.log("[INFO] Trying fallback for failed mods..."))
+                    # Get the failed mod objects
+                    failed_mod_objs = [m for m in selected_mods if m.mod_reference in failed_mods]
+                    self._install_with_direct_download_internal(
+                        failed_mod_objs,
+                        len(successful_mods),
+                        0,
+                        0
+                    )
                 else:
-                    self.after(0, lambda m=mod.name, r=result: self.log(
-                        f"[FAIL] {m} - {r.message}"
+                    self.after(0, lambda: self._on_installation_complete(
+                        len(successful_mods), len(failed_mods), 0
                     ))
-                    fail_count += 1
 
-            # Complete
-            self.after(0, lambda: self._on_installation_complete(success_count, fail_count, skip_count))
+        except Exception as e:
+            self.after(0, lambda: self.log(f"[ERROR] ficsit-cli installation failed: {e}"))
+            self.after(0, lambda: self.log("[INFO] Falling back to direct download..."))
+            self._install_with_direct_download(selected_mods)
 
-        threading.Thread(target=install_thread, daemon=True).start()
+    def _install_with_direct_download(self, selected_mods: List[Mod]):
+        """Install mods using direct download (fallback method)."""
+        self._install_with_direct_download_internal(selected_mods, 0, 0, 0)
+
+    def _install_with_direct_download_internal(
+        self,
+        mods_to_install: List[Mod],
+        initial_success: int,
+        initial_fail: int,
+        initial_skip: int
+    ):
+        """Internal direct download installation."""
+        success_count = initial_success
+        fail_count = initial_fail
+        skip_count = initial_skip
+
+        total = len(mods_to_install)
+        for i, mod in enumerate(mods_to_install):
+            progress = i / total
+            self.after(0, lambda p=progress, m=mod.name: self._update_progress(p, f"Fetching {m}..."))
+
+            # Fetch mod info
+            has_windows = self.mod_manager.fetch_mod_info(mod)
+
+            if not has_windows:
+                self.after(0, lambda m=mod.name: self.log(f"[SKIP] {m} - No Windows version"))
+                skip_count += 1
+                continue
+
+            self.after(0, lambda m=mod.name, v=mod.version: self.log(f"[....] Downloading {m} v{v}..."))
+
+            # Download and install
+            def progress_callback(downloaded, total_bytes):
+                if total_bytes > 0:
+                    pct = downloaded / total_bytes
+                    self.after(0, lambda p=progress + (pct / total): self._update_progress(
+                        p, f"Downloading... {downloaded // 1024}KB / {total_bytes // 1024}KB"
+                    ))
+
+            result = self.mod_manager.install_mod(mod, progress_callback)
+
+            if result.success:
+                self.after(0, lambda m=mod.name, r=result: self.log(
+                    f"[OK] {m} v{r.version} - {r.message}"
+                ))
+                success_count += 1
+            else:
+                self.after(0, lambda m=mod.name, r=result: self.log(
+                    f"[FAIL] {m} - {r.message}"
+                ))
+                fail_count += 1
+
+        # Complete
+        self.after(0, lambda: self._on_installation_complete(success_count, fail_count, skip_count))
 
     def _update_progress(self, value: float, status: str):
         """Update progress bar and status label."""
@@ -518,8 +616,13 @@ class ModInstallerApp(ctk.CTk):
             self.log("")
             self.log("Next steps:")
             self.log("  1. Launch Satisfactory from Steam/Epic")
-            self.log("  2. Look for 'MODS' button in main menu")
-            self.log("  3. Connect to the modded server")
+            self.log("  2. The game should detect mods automatically")
+            self.log("  3. Look for 'MODS' button in main menu")
+            self.log("  4. Connect to the modded server")
+            if self.ficsit_cli and self.ficsit_cli.is_available():
+                self.log("")
+                self.log("Mods were installed using the official ficsit-cli tool")
+                self.log("for maximum compatibility with Satisfactory.")
         else:
             self.status_label.configure(text="Installation failed. Check log for details.")
 

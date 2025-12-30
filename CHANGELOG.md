@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2024-12-30
+
+### Changed (Client Mod Installer)
+
+- **Integrated official ficsit-cli tool** for reliable mod installation
+  - Downloads and caches ficsit-cli (~15MB) from GitHub releases
+  - Uses the same installation method as the official Satisfactory Mod Manager
+  - Properly registers game installation and creates mod profiles
+  - Handles mod dependencies automatically
+  - Ensures mods are recognized by the game (fixes "default game client" error)
+- GUI now shows ficsit-cli initialization status on startup
+- Installation process now shows which method is being used
+- Improved installation completion messages with clear next steps
+
+### Added
+
+- `FicsitCLI` class in `mod_installer_core.py` for managing the official CLI tool
+- Automatic ficsit-cli download and caching system
+- Fallback to direct download method if ficsit-cli fails
+
+### Fixed
+
+- **Fixed "Is not possible to connect to a modded server in a default game client" error**
+  - Root cause: Manual file placement alone wasn't enough for the game to recognize mods
+  - Solution: Using ficsit-cli ensures proper mod registration and profile management
+
+## [1.0.1] - 2024-12-30
+
+### Fixed (Client Mod Installer)
+
+- **Added 7 missing mod dependencies** that were causing "missing plugin" errors:
+  - `ModUpdateNotifier` - required by Additional_300_Inventory_Slots
+  - `MarcioCommonLibs` - required by EfficiencyCheckerMod
+  - `MinoDabsCommonLib` - required by Additional_300_Inventory_Slots
+  - `ModularUI` - required by RefinedPower, FicsitFarming
+  - `RefinedRDApi` - required by RefinedPower, FicsitFarming
+  - `RefinedRDLib` - required by RefinedPower, FicsitFarming
+  - `avMallLib` - required by Dispenser
+- Updated mod count from 24 to 31 in all installers
+- Dependencies are now installed before main mods (priority ordering)
+
+## [1.0.0] - 2024-12-30
+
 ### Added (Client Mod Installer)
 
 - **Python GUI Application** (`scripts/mods/client/mod_installer_gui.py`) - **RECOMMENDED**

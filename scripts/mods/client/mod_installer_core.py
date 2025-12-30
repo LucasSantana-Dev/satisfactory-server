@@ -1,6 +1,7 @@
 """
 Satisfactory Mod Installer - Core Logic
 Handles game path detection, API communication, and mod downloads.
+Integrates with ficsit-cli for reliable mod installation.
 """
 
 import json
@@ -8,6 +9,7 @@ import logging
 import os
 import platform
 import shutil
+import subprocess
 import tempfile
 import zipfile
 from dataclasses import dataclass
@@ -22,6 +24,7 @@ logger = logging.getLogger(__name__)
 
 # API Configuration
 FICSIT_API_URL = "https://api.ficsit.app/v2/query"
+FICSIT_CLI_RELEASES_URL = "https://api.github.com/repos/satisfactorymodding/ficsit-cli/releases/latest"
 REQUEST_TIMEOUT = 60
 DOWNLOAD_TIMEOUT = 300
 
@@ -50,6 +53,287 @@ class InstallResult:
     message: str
     version: Optional[str] = None
     files_installed: int = 0
+
+
+class FicsitCLI:
+    """
+    Wrapper for the official ficsit-cli tool.
+    Downloads and uses ficsit-cli for reliable mod installation.
+    """
+    
+    PROFILE_NAME = "SatisfactoryServerMods"
+    
+    def __init__(self, cache_dir: Optional[str] = None):
+        """
+        Initialize FicsitCLI wrapper.
+        
+        Args:
+            cache_dir: Directory to cache ficsit-cli executable
+        """
+        if cache_dir:
+            self.cache_dir = Path(cache_dir)
+        else:
+            # Default to user's AppData/Local on Windows
+            if platform.system() == "Windows":
+                self.cache_dir = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "SatisfactoryModInstaller"
+            else:
+                self.cache_dir = Path.home() / ".satisfactory-mod-installer"
+        
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        self.cli_path: Optional[Path] = None
+        self._find_or_download_cli()
+    
+    def _find_or_download_cli(self) -> bool:
+        """Find existing ficsit-cli or download it."""
+        # Check if already cached
+        if platform.system() == "Windows":
+            cli_name = "ficsit.exe"
+        else:
+            cli_name = "ficsit"
+        
+        cached_cli = self.cache_dir / cli_name
+        if cached_cli.exists():
+            self.cli_path = cached_cli
+            logger.info(f"Found cached ficsit-cli at {cached_cli}")
+            return True
+        
+        # Need to download
+        return self._download_cli()
+    
+    def _download_cli(self, progress_callback: Optional[Callable[[int, int], None]] = None) -> bool:
+        """
+        Download ficsit-cli from GitHub releases.
+        
+        Returns:
+            True if download successful
+        """
+        logger.info("Downloading ficsit-cli from GitHub...")
+        
+        try:
+            # Get latest release info
+            response = requests.get(FICSIT_CLI_RELEASES_URL, timeout=30)
+            response.raise_for_status()
+            release_data = response.json()
+            
+            # Find the appropriate asset for this platform
+            system = platform.system().lower()
+            machine = platform.machine().lower()
+            
+            # Map architecture names
+            if machine in ("x86_64", "amd64"):
+                arch = "amd64"
+            elif machine in ("i386", "i686", "x86"):
+                arch = "386"
+            elif machine in ("arm64", "aarch64"):
+                arch = "arm64"
+            else:
+                arch = "amd64"  # Default
+            
+            # Build expected asset name
+            if system == "windows":
+                asset_name = f"ficsit_windows_{arch}.exe"
+                cli_name = "ficsit.exe"
+            elif system == "darwin":
+                asset_name = "ficsit_darwin_all"
+                cli_name = "ficsit"
+            else:
+                asset_name = f"ficsit_linux_{arch}"
+                cli_name = "ficsit"
+            
+            # Find asset URL
+            download_url = None
+            for asset in release_data.get("assets", []):
+                if asset["name"] == asset_name:
+                    download_url = asset["browser_download_url"]
+                    break
+            
+            if not download_url:
+                logger.error(f"Could not find ficsit-cli asset: {asset_name}")
+                return False
+            
+            # Download the executable
+            logger.info(f"Downloading {asset_name}...")
+            response = requests.get(download_url, stream=True, timeout=300)
+            response.raise_for_status()
+            
+            total_size = int(response.headers.get('content-length', 0))
+            downloaded = 0
+            
+            cli_path = self.cache_dir / cli_name
+            with open(cli_path, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
+                        downloaded += len(chunk)
+                        if progress_callback and total_size > 0:
+                            progress_callback(downloaded, total_size)
+            
+            # Make executable on Unix
+            if system != "windows":
+                os.chmod(cli_path, 0o755)
+            
+            self.cli_path = cli_path
+            logger.info(f"ficsit-cli downloaded to {cli_path}")
+            return True
+            
+        except requests.RequestException as e:
+            logger.error(f"Failed to download ficsit-cli: {e}")
+            return False
+        except Exception as e:
+            logger.error(f"Error downloading ficsit-cli: {e}")
+            return False
+    
+    def is_available(self) -> bool:
+        """Check if ficsit-cli is available."""
+        return self.cli_path is not None and self.cli_path.exists()
+    
+    def _run_command(self, args: List[str], capture_output: bool = True) -> Tuple[bool, str]:
+        """
+        Run a ficsit-cli command.
+        
+        Returns:
+            Tuple of (success, output/error message)
+        """
+        if not self.is_available():
+            return False, "ficsit-cli not available"
+        
+        cmd = [str(self.cli_path)] + args
+        logger.debug(f"Running: {' '.join(cmd)}")
+        
+        try:
+            if platform.system() == "Windows":
+                # Hide console window on Windows
+                startupinfo = subprocess.STARTUPINFO()
+                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                result = subprocess.run(
+                    cmd,
+                    capture_output=capture_output,
+                    text=True,
+                    timeout=300,
+                    startupinfo=startupinfo
+                )
+            else:
+                result = subprocess.run(
+                    cmd,
+                    capture_output=capture_output,
+                    text=True,
+                    timeout=300
+                )
+            
+            if result.returncode == 0:
+                return True, result.stdout if capture_output else ""
+            else:
+                error_msg = result.stderr if capture_output else f"Exit code: {result.returncode}"
+                return False, error_msg
+                
+        except subprocess.TimeoutExpired:
+            return False, "Command timed out"
+        except Exception as e:
+            return False, str(e)
+    
+    def add_installation(self, game_path: str) -> Tuple[bool, str]:
+        """Add a game installation to ficsit-cli."""
+        success, output = self._run_command(["installation", "add", game_path])
+        if success:
+            return True, f"Added installation: {game_path}"
+        elif "already exists" in output.lower():
+            return True, f"Installation already registered: {game_path}"
+        return False, output
+    
+    def create_profile(self, profile_name: Optional[str] = None) -> Tuple[bool, str]:
+        """Create a mod profile."""
+        name = profile_name or self.PROFILE_NAME
+        success, output = self._run_command(["profile", "create", name])
+        if success:
+            return True, f"Created profile: {name}"
+        elif "already exists" in output.lower():
+            return True, f"Profile already exists: {name}"
+        return False, output
+    
+    def add_mod_to_profile(self, mod_reference: str, profile_name: Optional[str] = None) -> Tuple[bool, str]:
+        """Add a mod to a profile."""
+        name = profile_name or self.PROFILE_NAME
+        success, output = self._run_command(["profile", "mod", "add", name, mod_reference])
+        if success:
+            return True, f"Added {mod_reference} to profile"
+        return False, output
+    
+    def set_installation_profile(self, game_path: str, profile_name: Optional[str] = None) -> Tuple[bool, str]:
+        """Set the profile for an installation (applies mods)."""
+        name = profile_name or self.PROFILE_NAME
+        success, output = self._run_command(["installation", "set-profile", game_path, name])
+        if success:
+            return True, f"Applied profile {name} to installation"
+        return False, output
+    
+    def install_mods(
+        self,
+        game_path: str,
+        mod_references: List[str],
+        progress_callback: Optional[Callable[[str, str], None]] = None
+    ) -> Tuple[bool, List[str], List[str]]:
+        """
+        Install mods using ficsit-cli.
+        
+        Args:
+            game_path: Path to Satisfactory installation
+            mod_references: List of mod references to install
+            progress_callback: Optional callback(mod_ref, status_message)
+        
+        Returns:
+            Tuple of (overall_success, successful_mods, failed_mods)
+        """
+        successful = []
+        failed = []
+        
+        # Step 1: Add installation
+        if progress_callback:
+            progress_callback("", "Registering game installation...")
+        
+        success, msg = self.add_installation(game_path)
+        if not success:
+            logger.error(f"Failed to add installation: {msg}")
+            return False, [], mod_references
+        
+        # Step 2: Create profile
+        if progress_callback:
+            progress_callback("", "Creating mod profile...")
+        
+        success, msg = self.create_profile()
+        if not success:
+            logger.error(f"Failed to create profile: {msg}")
+            return False, [], mod_references
+        
+        # Step 3: Add each mod to the profile
+        for mod_ref in mod_references:
+            if progress_callback:
+                progress_callback(mod_ref, f"Adding {mod_ref} to profile...")
+            
+            success, msg = self.add_mod_to_profile(mod_ref)
+            if success:
+                successful.append(mod_ref)
+                logger.info(f"Added {mod_ref} to profile")
+            else:
+                failed.append(mod_ref)
+                logger.warning(f"Failed to add {mod_ref}: {msg}")
+        
+        # Step 4: Apply profile to installation (this downloads and installs)
+        if progress_callback:
+            progress_callback("", "Applying profile (downloading and installing mods)...")
+        
+        success, msg = self.set_installation_profile(game_path)
+        if not success:
+            logger.error(f"Failed to apply profile: {msg}")
+            return False, successful, failed
+        
+        return len(failed) == 0, successful, failed
+    
+    def get_version(self) -> Optional[str]:
+        """Get ficsit-cli version."""
+        success, output = self._run_command(["--version"])
+        if success:
+            return output.strip()
+        return None
 
 
 class GamePathDetector:
@@ -564,8 +848,17 @@ def get_embedded_mods_config() -> List[Dict]:
     This is used when mods-list.json is not available.
     """
     return [
+        # Core dependencies (priority 0-1)
         {"name": "Satisfactory Mod Loader", "mod_reference": "SML", "category": "dependency", "required": True, "priority": 0, "description": "Required for ALL mods"},
         {"name": "Pak Utility Mod", "mod_reference": "UtilityMod", "category": "dependency", "required": True, "priority": 1, "description": "Required dependency for most mods"},
+        {"name": "Mod Update Notifier", "mod_reference": "ModUpdateNotifier", "category": "dependency", "required": True, "priority": 1, "description": "Required by Additional_300_Inventory_Slots"},
+        {"name": "Marcio Common Libs", "mod_reference": "MarcioCommonLibs", "category": "dependency", "required": True, "priority": 1, "description": "Required by Efficiency Checker"},
+        {"name": "MinoDabs Common Lib", "mod_reference": "MinoDabsCommonLib", "category": "dependency", "required": True, "priority": 1, "description": "Required by Additional_300_Inventory_Slots"},
+        {"name": "Modular UI", "mod_reference": "ModularUI", "category": "dependency", "required": True, "priority": 1, "description": "Required by Refined Power, Ficsit Farming"},
+        {"name": "Refined R&D API", "mod_reference": "RefinedRDApi", "category": "dependency", "required": True, "priority": 1, "description": "Required by Refined Power, Ficsit Farming"},
+        {"name": "Refined R&D Lib", "mod_reference": "RefinedRDLib", "category": "dependency", "required": True, "priority": 1, "description": "Required by Refined Power, Ficsit Farming"},
+        {"name": "avMall Lib", "mod_reference": "avMallLib", "category": "dependency", "required": True, "priority": 1, "description": "Required by Item Dispenser"},
+        # Quality of Life mods (priority 2)
         {"name": "Smart!", "mod_reference": "SmartFoundations", "category": "quality-of-life", "required": False, "priority": 2, "description": "Mass building of foundations, walls, and more"},
         {"name": "Micro Manage", "mod_reference": "MicroManage", "category": "quality-of-life", "required": False, "priority": 2, "description": "Precise object positioning, rotation, and scaling"},
         {"name": "Efficiency Checker", "mod_reference": "EfficiencyCheckerMod", "category": "quality-of-life", "required": False, "priority": 2, "description": "Monitor production efficiency"},
@@ -575,6 +868,7 @@ def get_embedded_mods_config() -> List[Dict]:
         {"name": "Load Balancers", "mod_reference": "LoadBalancers", "category": "quality-of-life", "required": False, "priority": 2, "description": "Better load balancing"},
         {"name": "MAM Enhancer", "mod_reference": "MAMTips", "category": "quality-of-life", "required": False, "priority": 2, "description": "Enhanced MAM interface"},
         {"name": "MiniMap", "mod_reference": "MiniMap", "category": "quality-of-life", "required": False, "priority": 2, "description": "In-game minimap"},
+        # Content mods (priority 3)
         {"name": "Refined Power", "mod_reference": "RefinedPower", "category": "content", "required": False, "priority": 3, "description": "New power generation options"},
         {"name": "Ficsit Farming", "mod_reference": "FicsitFarming", "category": "content", "required": False, "priority": 3, "description": "Farming mechanics"},
         {"name": "Teleporter", "mod_reference": "Teleporter", "category": "content", "required": False, "priority": 3, "description": "Instant travel"},
@@ -585,6 +879,7 @@ def get_embedded_mods_config() -> List[Dict]:
         {"name": "Big Storage Tank", "mod_reference": "BigStorageTank", "category": "content", "required": False, "priority": 3, "description": "Large fluid storage"},
         {"name": "Container Screens", "mod_reference": "ContainerScreen", "category": "content", "required": False, "priority": 3, "description": "Display screens for containers"},
         {"name": "Item Dispenser", "mod_reference": "Dispenser", "category": "content", "required": False, "priority": 3, "description": "Automatic item dispensing"},
+        # Cheat mods (priority 4)
         {"name": "EasyCheat", "mod_reference": "EasyCheat", "category": "cheat", "required": False, "priority": 4, "description": "Cheat menu"},
         {"name": "PowerSuit", "mod_reference": "PowerSuit", "category": "cheat", "required": False, "priority": 4, "description": "Enhanced player abilities"},
         {"name": "Extra Inventory", "mod_reference": "Additional_300_Inventory_Slots", "category": "cheat", "required": False, "priority": 4, "description": "300 extra inventory slots"},
