@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.6] - 2024-12-30
+
+### Fixed (Client Mod Installer)
+
+- **Critical fix: Add missing `apply` command**
+  - ficsit-cli's `set-profile` only LINKS a profile to installation - it doesn't download mods!
+  - Now we call `apply <path>` after setting profile to actually download and install mods
+  - This is the root cause of why dependency mods weren't being installed
+
 ## [1.1.5] - 2024-12-30
 
 ### Fixed (Client Mod Installer)

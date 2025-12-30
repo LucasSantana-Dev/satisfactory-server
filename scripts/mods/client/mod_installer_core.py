@@ -276,11 +276,18 @@ class FicsitCLI:
         return False, output
 
     def set_installation_profile(self, game_path: str, profile_name: Optional[str] = None) -> Tuple[bool, str]:
-        """Set the profile for an installation (applies mods)."""
+        """Set the profile for an installation (links profile to game)."""
         name = profile_name or self.PROFILE_NAME
         success, output = self._run_command(["installation", "set-profile", game_path, name])
         if success:
-            return True, f"Applied profile {name} to installation"
+            return True, f"Linked profile {name} to installation"
+        return False, output
+
+    def apply_installation(self, game_path: str) -> Tuple[bool, str]:
+        """Apply profile and actually download/install mods."""
+        success, output = self._run_command(["apply", game_path])
+        if success:
+            return True, "Mods downloaded and installed"
         return False, output
 
     def install_mods(
@@ -352,16 +359,28 @@ class FicsitCLI:
 
         diagnostics.append(f"[INFO] Mods added: {len(successful)}/{len(mod_references)}")
 
-        # Step 4: Apply profile to installation (this downloads and installs)
+        # Step 4: Link profile to installation
         if progress_callback:
-            progress_callback("", "Applying profile (downloading and installing mods)...")
+            progress_callback("", "Linking profile to installation...")
 
         success, msg = self.set_installation_profile(game_path)
         if success:
-            diagnostics.append(f"[OK] Profile applied: {msg}")
+            diagnostics.append(f"[OK] Profile linked: {msg}")
         else:
-            diagnostics.append(f"[FAILED] Profile apply: {msg}")
-            logger.error(f"Failed to apply profile: {msg}")
+            diagnostics.append(f"[FAILED] Profile link: {msg}")
+            logger.error(f"Failed to link profile: {msg}")
+            return False, successful, failed_with_errors, "\n".join(diagnostics)
+
+        # Step 5: Apply - actually download and install mods
+        if progress_callback:
+            progress_callback("", "Downloading and installing mods...")
+
+        success, msg = self.apply_installation(game_path)
+        if success:
+            diagnostics.append(f"[OK] Installation: {msg}")
+        else:
+            diagnostics.append(f"[FAILED] Installation: {msg}")
+            logger.error(f"Failed to install mods: {msg}")
             return False, successful, failed_with_errors, "\n".join(diagnostics)
 
         return len(failed_with_errors) == 0, successful, failed_with_errors, "\n".join(diagnostics)
