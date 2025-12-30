@@ -7,6 +7,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.1] - 2024-12-30
+
+### Added
+
+- **Compatibility checking**: Installer now checks ficsit.app for broken/incompatible mods
+  - Mods marked as "Broken" on ficsit.app are automatically skipped
+  - Shows clear warnings during dependency resolution phase
+  - Prevents installing mods that would crash the game
+
+- **18 New Popular Mods** (all verified compatible with Satisfactory 1.0):
+
+  **New Dependency:**
+  - ContentLib - Content library required by FlexSplines
+
+  **Quality of Life / Building:**
+  - Floor Hole Ceiling Logistics (`FloorHole`) - Pass belts/pipes through floors
+  - Conveyor Wall Hole (`WallHoleConveyor`) - Pass conveyors through walls
+  - Flex Splines (`FlexSplines`) - Longer bendable conveyors and pipes
+  - Daisy Chain Power (`DaisyChainPowerCables`) - Daisy chain power cables
+  - Covered Conveyor Belts (`CoveredConveyor`) - Aesthetic covered belts
+  - Underground Belts (`UndergroundBelts`) - Hidden underground conveyors
+  - Wall Pipe Supports (`WallPipeSupports`) - Better pipe wall mounts
+  - Upside Down Foundations (`UpsideDownFoundations`) - More foundation options
+
+  **Monitoring / Info:**
+  - Power Checker (`PowerChecker`) - Monitor power consumption
+  - Throughput Counter and Limiter (`CounterLimiter`) - Count items and limit throughput
+  - FicsIt-Networks (`FicsItNetworks`) - Lua scripting factory automation
+
+  **Content / Gameplay:**
+  - Magic Machines (`MagicMachine`) - Sandbox spawners
+  - Faster Manual Crafting Redux (`FasterManualCraftingRedux`) - Speed up hand crafting
+  - Advanced Logistics (`AdvancedLogistics`) - Programmable splitters
+  - Fluid Sink (`FluidSink`) - Sink fluids for points
+
+  **Cheats / Convenience:**
+  - Unlock All Alternate Recipes (`UnlockAllAlternateRecipes`) - Skip hard drives
+  - Item Spawner (`ItemSpawner`) - Spawn any item
+  - All Nodes Pure (`AllNodesPure`) - Make all resource nodes pure
+
+### Removed
+
+- **PowerSuit mod**: Removed from default mod list (marked as BROKEN on ficsit.app, incompatible with Satisfactory 1.0)
+
+### Technical
+
+- Added `compatibility_warning` field to `ResolvedMod` dataclass
+- Added `is_broken` property to check if mod is incompatible
+- Updated API query to fetch EA/EXP compatibility status
+- Gap analysis now excludes broken mods from installation
+
 ## [1.2.0] - 2024-12-30
 
 ### Added (Client Mod Installer - Major Rewrite)

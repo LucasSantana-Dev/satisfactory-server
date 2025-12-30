@@ -73,6 +73,14 @@
       "description": "Required by Item Dispenser."
     },
     {
+      "name": "ContentLib",
+      "mod_reference": "ContentLib",
+      "category": "dependency",
+      "required": true,
+      "priority": 1,
+      "description": "Content library required by FlexSplines and other mods."
+    },
+    {
       "name": "Smart!",
       "mod_reference": "SmartFoundations",
       "category": "quality-of-life",
@@ -143,6 +151,94 @@
       "required": false,
       "priority": 2,
       "description": "In-game minimap for navigation"
+    },
+    {
+      "name": "Floor Hole Ceiling Logistics",
+      "mod_reference": "FloorHole",
+      "category": "quality-of-life",
+      "required": false,
+      "priority": 2,
+      "description": "Pass conveyors, pipes, power and hypertubes through floors and ceilings"
+    },
+    {
+      "name": "Conveyor Wall Hole",
+      "mod_reference": "WallHoleConveyor",
+      "category": "quality-of-life",
+      "required": false,
+      "priority": 2,
+      "description": "Put a hole in the wall for conveyors wherever you want"
+    },
+    {
+      "name": "Flex Splines",
+      "mod_reference": "FlexSplines",
+      "category": "quality-of-life",
+      "required": false,
+      "priority": 2,
+      "description": "Build longer vanilla conveyors, pipes and hypertubes"
+    },
+    {
+      "name": "Daisy Chain Power",
+      "mod_reference": "DaisyChainPowerCables",
+      "category": "quality-of-life",
+      "required": false,
+      "priority": 2,
+      "description": "Machines with 4 power connections for daisy-chaining"
+    },
+    {
+      "name": "Covered Conveyor Belts",
+      "mod_reference": "CoveredConveyor",
+      "category": "quality-of-life",
+      "required": false,
+      "priority": 2,
+      "description": "Aesthetic covered conveyor belts Mk1-6 with colors"
+    },
+    {
+      "name": "Underground Belts",
+      "mod_reference": "UndergroundBelts",
+      "category": "quality-of-life",
+      "required": false,
+      "priority": 2,
+      "description": "Hidden underground conveyor belts for cleaner factories"
+    },
+    {
+      "name": "Wall Pipe Supports",
+      "mod_reference": "WallPipeSupports",
+      "category": "quality-of-life",
+      "required": false,
+      "priority": 2,
+      "description": "Additional variants of wall pipe supports"
+    },
+    {
+      "name": "Upside Down Foundations",
+      "mod_reference": "UpsideDownFoundations",
+      "category": "quality-of-life",
+      "required": false,
+      "priority": 2,
+      "description": "Grass, emissives, rock, and more foundation options"
+    },
+    {
+      "name": "Power Checker",
+      "mod_reference": "PowerChecker",
+      "category": "quality-of-life",
+      "required": false,
+      "priority": 2,
+      "description": "Check if your fuses can blow - monitor power consumption"
+    },
+    {
+      "name": "Throughput Counter and Limiter",
+      "mod_reference": "CounterLimiter",
+      "category": "quality-of-life",
+      "required": false,
+      "priority": 2,
+      "description": "Belt attachment that displays item throughput and can limit it"
+    },
+    {
+      "name": "FicsIt-Networks",
+      "mod_reference": "FicsItNetworks",
+      "category": "quality-of-life",
+      "required": false,
+      "priority": 2,
+      "description": "Customizable computers with Lua scripting for factory automation"
     },
     {
       "name": "Refined Power",
@@ -225,6 +321,38 @@
       "description": "Dispense items automatically"
     },
     {
+      "name": "Magic Machines",
+      "mod_reference": "MagicMachine",
+      "category": "content",
+      "required": false,
+      "priority": 3,
+      "description": "Sandbox spawners for fluids, solids and energy"
+    },
+    {
+      "name": "Faster Manual Crafting Redux",
+      "mod_reference": "FasterManualCraftingRedux",
+      "category": "content",
+      "required": false,
+      "priority": 3,
+      "description": "Speed up early game manual crafting grind"
+    },
+    {
+      "name": "Advanced Logistics",
+      "mod_reference": "AdvancedLogistics",
+      "category": "content",
+      "required": false,
+      "priority": 3,
+      "description": "Ratio adjustable programmable splitters and mergers"
+    },
+    {
+      "name": "Fluid Sink",
+      "mod_reference": "FluidSink",
+      "category": "content",
+      "required": false,
+      "priority": 3,
+      "description": "Sink fluids, valve overflow, ground drains and more"
+    },
+    {
       "name": "EasyCheat",
       "mod_reference": "EasyCheat",
       "category": "cheat",
@@ -233,20 +361,36 @@
       "description": "Simple cheat menu for resources and unlocks"
     },
     {
-      "name": "PowerSuit",
-      "mod_reference": "PowerSuit",
-      "category": "cheat",
-      "required": false,
-      "priority": 4,
-      "description": "Enhanced player abilities and stats"
-    },
-    {
       "name": "Additional 300 Inventory Slots",
       "mod_reference": "Additional_300_Inventory_Slots",
       "category": "cheat",
       "required": false,
       "priority": 4,
       "description": "Extra inventory space"
+    },
+    {
+      "name": "Unlock All Alternate Recipes",
+      "mod_reference": "UnlockAllAlternateRecipes",
+      "category": "cheat",
+      "required": false,
+      "priority": 4,
+      "description": "Unlock all alternate recipes without hard drives"
+    },
+    {
+      "name": "Item Spawner",
+      "mod_reference": "ItemSpawner",
+      "category": "cheat",
+      "required": false,
+      "priority": 4,
+      "description": "Spawn any item in-game via GUI"
+    },
+    {
+      "name": "All Nodes Pure",
+      "mod_reference": "AllNodesPure",
+      "category": "cheat",
+      "required": false,
+      "priority": 4,
+      "description": "All resource nodes in the world are pure quality"
     }
   ]
 }

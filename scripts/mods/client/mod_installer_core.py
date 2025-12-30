@@ -591,18 +591,23 @@ class FicsitAPIClient:
         except requests.RequestException:
             return False
 
-    def get_mod_with_dependencies(self, mod_reference: str) -> Tuple[Optional[str], Optional[str], List[str]]:
+    def get_mod_with_dependencies(self, mod_reference: str) -> Tuple[Optional[str], Optional[str], List[str], Optional[str]]:
         """
-        Get mod info including its dependencies.
+        Get mod info including its dependencies and compatibility status.
 
         Returns:
-            Tuple of (version, download_url, list of dependency mod_references)
+            Tuple of (version, download_url, list of dependency mod_references, compatibility_warning)
+            compatibility_warning is None if mod is compatible, otherwise a warning message
         """
         query = """
         query GetModWithDeps($modReference: ModReference!) {
             getModByReference(modReference: $modReference) {
                 name
                 mod_reference
+                compatibility {
+                    EA { state note }
+                    EXP { state note }
+                }
                 versions(filter: {limit: 1, order_by: created_at, order: desc}) {
                     version
                     dependencies {
@@ -632,15 +637,28 @@ class FicsitAPIClient:
             mod_data = data.get("data", {}).get("getModByReference")
             if not mod_data:
                 logger.warning(f"Mod not found on ficsit.app: {mod_reference}")
-                return None, None, []
+                return None, None, [], None
 
             versions = mod_data.get("versions", [])
             if not versions:
                 logger.warning(f"No versions found for mod: {mod_reference}")
-                return None, None, []
+                return None, None, [], None
 
             version_info = versions[0]
             version = version_info.get("version")
+
+            # Check compatibility status
+            compatibility_warning = None
+            compatibility = mod_data.get("compatibility", {})
+            ea_status = compatibility.get("EA", {}).get("state", "")
+            exp_status = compatibility.get("EXP", {}).get("state", "")
+
+            if ea_status == "Broken" or exp_status == "Broken":
+                note = compatibility.get("EA", {}).get("note") or compatibility.get("EXP", {}).get("note") or ""
+                compatibility_warning = f"BROKEN - incompatible with current game version"
+                if note:
+                    compatibility_warning += f" ({note})"
+                logger.warning(f"Mod {mod_reference} is marked as BROKEN on ficsit.app")
 
             # Extract dependencies (excluding SML as it's always required)
             dependencies = []
@@ -660,14 +678,14 @@ class FicsitAPIClient:
                     download_url = link
                     break
 
-            return version, download_url, dependencies
+            return version, download_url, dependencies, compatibility_warning
 
         except requests.RequestException as e:
             logger.error(f"API request failed for {mod_reference}: {e}")
-            return None, None, []
+            return None, None, [], None
         except (KeyError, json.JSONDecodeError) as e:
             logger.error(f"Failed to parse API response for {mod_reference}: {e}")
-            return None, None, []
+            return None, None, [], None
 
 
 @dataclass
@@ -693,6 +711,12 @@ class ResolvedMod:
     download_url: Optional[str]
     dependencies: List[str]
     has_windows_target: bool
+    compatibility_warning: Optional[str] = None
+
+    @property
+    def is_broken(self) -> bool:
+        """True if mod is marked as broken/incompatible."""
+        return self.compatibility_warning is not None and "BROKEN" in self.compatibility_warning
 
 
 class DependencyResolver:
@@ -739,7 +763,7 @@ class DependencyResolver:
 
             logger.info(f"Resolving: {mod_ref}")
 
-            version, download_url, dependencies = self.api_client.get_mod_with_dependencies(mod_ref)
+            version, download_url, dependencies, compat_warning = self.api_client.get_mod_with_dependencies(mod_ref)
 
             if version is None:
                 self._resolution_errors[mod_ref] = f"Mod not found on ficsit.app"
@@ -752,8 +776,15 @@ class DependencyResolver:
                 version=version,
                 download_url=download_url,
                 dependencies=dependencies,
-                has_windows_target=download_url is not None
+                has_windows_target=download_url is not None,
+                compatibility_warning=compat_warning
             )
+
+            # Warn about broken mods but still add them (user can decide)
+            if resolved.is_broken:
+                self._resolution_errors[mod_ref] = compat_warning
+                logger.warning(f"Mod {mod_ref} is BROKEN: {compat_warning}")
+
             self._cache[mod_ref] = resolved
             all_needed.add(mod_ref)
 
@@ -1310,12 +1341,21 @@ class PreVerifyInstaller:
 
         details.append(f"Resolved {len(resolved_list)} mods (including dependencies)")
 
+        # Check for broken mods
+        broken_mods = [m for m in resolved_list if m.is_broken]
+        if broken_mods:
+            details.append("")
+            details.append("WARNING: The following mods are BROKEN and will be skipped:")
+            for m in broken_mods:
+                details.append(f"  [BROKEN] {m.mod_reference}: {m.compatibility_warning}")
+
         if errors:
             for ref, error in errors.items():
-                details.append(f"  [WARN] {ref}: {error}")
+                if "BROKEN" not in error:  # Don't duplicate broken mod warnings
+                    details.append(f"  [WARN] {ref}: {error}")
 
         # Check for mods without Windows targets
-        no_windows = [m for m in resolved_list if not m.has_windows_target]
+        no_windows = [m for m in resolved_list if not m.has_windows_target and not m.is_broken]
         if no_windows:
             for m in no_windows:
                 details.append(f"  [WARN] {m.mod_reference}: No Windows version available")
@@ -1383,13 +1423,21 @@ class PreVerifyInstaller:
         if progress_callback:
             progress_callback("", "Phase 3: Analyzing gaps...")
 
-        # Get what we need
-        needed_refs = list(self.resolved_mods.keys())
+        # Get what we need (excluding broken mods)
+        needed_refs = [
+            ref for ref, mod in self.resolved_mods.items()
+            if not mod.is_broken
+        ]
+        broken_refs = [
+            ref for ref, mod in self.resolved_mods.items()
+            if mod.is_broken
+        ]
         installed = self.scanner.scan_installed()
 
         missing = []
         invalid = []
         valid = []
+        skipped_broken = broken_refs.copy()
 
         for ref in needed_refs:
             if ref not in installed:
@@ -1409,10 +1457,12 @@ class PreVerifyInstaller:
             resolution_errors=self.resolver.get_resolution_errors()
         )
 
-        details.append(f"Need {len(needed_refs)} mods total")
+        details.append(f"Need {len(needed_refs)} mods total (excluding broken)")
         details.append(f"  Already valid: {len(valid)}")
         details.append(f"  Missing: {len(missing)}")
         details.append(f"  Invalid/needs repair: {len(invalid)}")
+        if skipped_broken:
+            details.append(f"  Skipped (BROKEN): {len(skipped_broken)}")
 
         if missing:
             details.append("Missing mods:")
@@ -1422,6 +1472,11 @@ class PreVerifyInstaller:
         if invalid:
             details.append("Invalid mods (will be re-downloaded):")
             for ref in invalid:
+                details.append(f"  - {ref}")
+
+        if skipped_broken:
+            details.append("Skipped broken mods (incompatible with current game):")
+            for ref in skipped_broken:
                 details.append(f"  - {ref}")
 
         if self.gap_analysis.all_ok:
@@ -1667,8 +1722,8 @@ def get_embedded_mods_config() -> List[Dict]:
         {"name": "Item Dispenser", "mod_reference": "Dispenser", "category": "content", "required": False, "priority": 3, "description": "Automatic item dispensing"},
         # Cheat mods (priority 4)
         {"name": "EasyCheat", "mod_reference": "EasyCheat", "category": "cheat", "required": False, "priority": 4, "description": "Cheat menu"},
-        {"name": "PowerSuit", "mod_reference": "PowerSuit", "category": "cheat", "required": False, "priority": 4, "description": "Enhanced player abilities"},
         {"name": "Extra Inventory", "mod_reference": "Additional_300_Inventory_Slots", "category": "cheat", "required": False, "priority": 4, "description": "300 extra inventory slots"},
+        # NOTE: PowerSuit removed - marked as BROKEN on ficsit.app, incompatible with current game
     ]
 
 
