@@ -487,23 +487,16 @@ class ModInstallerApp(ctk.CTk):
 
     def _install_with_ficsit_cli(self, selected_mods: List[Mod]):
         """Install mods using the official ficsit-cli tool."""
-        # Filter out dependency mods - ficsit-cli handles dependencies automatically
-        # Only add "leaf" mods (non-dependencies) and let ficsit-cli resolve deps
-        leaf_mods = [m for m in selected_mods if m.category != "dependency"]
-        dependency_mods = [m for m in selected_mods if m.category == "dependency"]
-
-        if dependency_mods:
-            dep_names = ", ".join([m.name for m in dependency_mods[:3]])
-            if len(dependency_mods) > 3:
-                dep_names += f", and {len(dependency_mods) - 3} more"
-            self.after(0, lambda: self.log(f"[INFO] ficsit-cli will auto-install dependencies: {dep_names}"))
-
-        mod_refs = [mod.mod_reference for mod in leaf_mods]
+        # Install ALL mods explicitly - don't rely on ficsit-cli auto-resolution
+        # This ensures dependencies are actually installed where the game can find them
+        mod_refs = [mod.mod_reference for mod in selected_mods]
 
         if not mod_refs:
-            self.after(0, lambda: self.log("[WARN] No non-dependency mods to install"))
-            self.after(0, lambda: self._on_installation_complete(0, 0, len(selected_mods)))
+            self.after(0, lambda: self.log("[WARN] No mods to install"))
+            self.after(0, lambda: self._on_installation_complete(0, 0, 0))
             return
+
+        self.after(0, lambda: self.log(f"[INFO] Installing {len(mod_refs)} mods (including dependencies)"))
 
         def progress_callback(mod_ref: str, status: str):
             self.after(0, lambda: self.log(f"[....] {status}"))
@@ -529,13 +522,10 @@ class ModInstallerApp(ctk.CTk):
             for diag_line in diagnostics.split("\n"):
                 self.after(0, lambda line=diag_line: self.log(f"  {line}"))
 
-            # Count dependencies as successful since ficsit-cli auto-installs them
-            total_successful = len(successful_mods) + len(dependency_mods)
-
             if success:
-                self.after(0, lambda: self.log(f"[OK] ficsit-cli installed {len(successful_mods)} mods + {len(dependency_mods)} auto-resolved dependencies"))
+                self.after(0, lambda: self.log(f"[OK] ficsit-cli installed {len(successful_mods)} mods"))
                 self.after(0, lambda: self._on_installation_complete(
-                    total_successful, len(failed_mods_with_errors), 0
+                    len(successful_mods), len(failed_mods_with_errors), 0
                 ))
             else:
                 # Log failures WITH actual error messages
@@ -546,17 +536,17 @@ class ModInstallerApp(ctk.CTk):
 
                 if failed_mods_with_errors and len(successful_mods) > 0:
                     self.after(0, lambda: self.log("[INFO] Trying fallback for failed mods..."))
-                    # Get the failed mod objects (only from leaf mods, not dependencies)
-                    failed_mod_objs = [m for m in leaf_mods if m.mod_reference in failed_mods_with_errors]
+                    # Get the failed mod objects
+                    failed_mod_objs = [m for m in selected_mods if m.mod_reference in failed_mods_with_errors]
                     self._install_with_direct_download_internal(
                         failed_mod_objs,
-                        total_successful,
+                        len(successful_mods),
                         0,
                         0
                     )
                 else:
                     self.after(0, lambda: self._on_installation_complete(
-                        total_successful, len(failed_mods_with_errors), 0
+                        len(successful_mods), len(failed_mods_with_errors), 0
                     ))
 
         except Exception as e:
@@ -666,32 +656,21 @@ class ModInstallerApp(ctk.CTk):
         self.log("Verifying Installation...")
         self.log("=" * 40)
 
-        # Check if ficsit-cli was used (dependencies are auto-resolved)
-        used_ficsit_cli = self.ficsit_cli and self.ficsit_cli.is_available() and self.use_ficsit_cli
-
         results = self.mod_manager.verify_all()
 
         valid_count = 0
         invalid_count = 0
         missing_count = 0
-        auto_resolved_count = 0
 
         for ref, result in results.items():
             mod = next((m for m in self.mod_manager.mods if m.mod_reference == ref), None)
             name = mod.name if mod else ref
-            is_dependency = mod and mod.category == "dependency"
             is_selected = self.mod_vars.get(ref, ctk.BooleanVar()).get()
 
             if not result["installed"]:
                 if is_selected:
-                    if is_dependency and used_ficsit_cli:
-                        # Dependency mods are auto-resolved by ficsit-cli
-                        # They may be installed under different names or as part of other mods
-                        self.log(f"[~~] {name} - Auto-resolved by ficsit-cli (may be bundled)")
-                        auto_resolved_count += 1
-                    else:
-                        self.log(f"[!!] {name} - Not installed")
-                        missing_count += 1
+                    self.log(f"[!!] {name} - Not installed")
+                    missing_count += 1
             elif not result["valid"]:
                 self.log(f"[!!] {name} - Invalid ({result['message']})")
                 invalid_count += 1
@@ -702,10 +681,7 @@ class ModInstallerApp(ctk.CTk):
                 valid_count += 1
 
         self.log("")
-        summary = f"Valid: {valid_count}, Invalid: {invalid_count}, Missing: {missing_count}"
-        if auto_resolved_count > 0:
-            summary += f", Auto-resolved: {auto_resolved_count}"
-        self.log(summary)
+        self.log(f"Valid: {valid_count}, Invalid: {invalid_count}, Missing: {missing_count}")
 
         # Check SML specifically
         sml_result = results.get("SML", {})

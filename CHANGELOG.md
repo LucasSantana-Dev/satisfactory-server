@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.5] - 2024-12-30
+
+### Fixed (Client Mod Installer)
+
+- **Critical fix: Dependencies now installed explicitly**
+  - Previous versions relied on ficsit-cli auto-resolution for dependencies
+  - Dependencies (ModUpdateNotifier, avMallLib, etc.) were NOT actually being installed
+  - Now ALL mods including dependencies are added to ficsit-cli profile explicitly
+  - This fixes "Missing Plugin" errors in the game
+
+- **Verification no longer assumes dependencies are installed**
+  - Removed false "Auto-resolved by ficsit-cli" status
+  - Missing mods are now correctly reported as "Not installed"
+
 ## [1.1.4] - 2024-12-30
 
 ### Fixed (Client Mod Installer)
