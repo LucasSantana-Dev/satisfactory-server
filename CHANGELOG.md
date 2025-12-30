@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.1] - 2024-12-30
+
+### Fixed (Client Mod Installer)
+
+- **Fixed dependency mods not installing with ficsit-cli**
+  - Root cause: ficsit-cli automatically resolves dependencies, but we were trying to install them explicitly
+  - Solution: Only add "leaf" mods (non-dependencies) to ficsit-cli profile; let it auto-resolve deps
+  - Dependencies like ModUpdateNotifier, MarcioCommonLibs, etc. are now properly handled
+
+### Changed
+
+- Improved logging to show when ficsit-cli is auto-resolving dependencies
+- Updated verification to recognize auto-resolved dependency mods
+- Better error messages and status reporting during installation
+
 ## [1.1.0] - 2024-12-30
 
 ### Changed (Client Mod Installer)
