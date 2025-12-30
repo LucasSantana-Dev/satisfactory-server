@@ -7,6 +7,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2024-12-30
+
+### Added (Client Mod Installer - Major Rewrite)
+
+- **Pre-Verification Installation System**
+  - New 5-phase installation workflow that guarantees correct mod installation
+  - Phase 1: Resolve all dependencies from ficsit.app API recursively
+  - Phase 2: Scan currently installed mods and verify file integrity
+  - Phase 3: Gap analysis - compare needed mods vs installed mods
+  - Phase 4: Targeted repair - only download what's actually missing
+  - Phase 5: Final verification - confirm all mods are correctly installed
+
+- **DependencyResolver class**
+  - Recursively fetches all dependencies from ficsit.app GraphQL API
+  - Handles transitive dependencies (dependencies of dependencies)
+  - Builds topologically sorted list (dependencies before dependents)
+  - Caches resolved mods to avoid duplicate API calls
+
+- **ModScanner class**
+  - Scans game's Mods directory to inventory installed mods
+  - Verifies file integrity (checks for .uplugin, .pak, .dll files)
+  - Extracts version information from .uplugin files
+  - Identifies missing or invalid mod installations
+
+- **Targeted Repair**
+  - Only downloads mods that are actually missing or invalid
+  - Skips already-valid mods for faster installation
+  - Re-downloads corrupt or incomplete mods automatically
+
+- **Better Verification**
+  - Shows detailed status of each installed mod
+  - Displays dependency mods that were auto-installed
+  - Clear pass/fail verdict with repair instructions
+
+### Fixed
+
+- **Root cause fix for missing dependencies**
+  - Previous versions reported success but dependencies weren't installed
+  - Now verifies BEFORE reporting success, fails if mods are missing
+  - Resolves issues with ModUpdateNotifier, avMallLib, MarcioCommonLibs, ModularUI
+
+### Changed
+
+- Removed ficsit-cli integration (was unreliable for dependency resolution)
+- Now uses direct download from ficsit.app API exclusively
+- Installation is more reliable but may take slightly longer
+
+### Technical Details
+
+- New classes: `DependencyResolver`, `ModScanner`, `PreVerifyInstaller`, `GapAnalysisResult`, `ModStatus`, `ResolvedMod`, `InstallPhaseResult`
+- API: `get_mod_with_dependencies()` fetches mod info including dependency list
+- Topological sorting ensures dependencies are installed before dependents
+
 ## [1.1.6] - 2024-12-30
 
 ### Fixed (Client Mod Installer)
