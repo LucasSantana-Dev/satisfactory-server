@@ -60,13 +60,13 @@ class FicsitCLI:
     Wrapper for the official ficsit-cli tool.
     Downloads and uses ficsit-cli for reliable mod installation.
     """
-    
+
     PROFILE_NAME = "SatisfactoryServerMods"
-    
+
     def __init__(self, cache_dir: Optional[str] = None):
         """
         Initialize FicsitCLI wrapper.
-        
+
         Args:
             cache_dir: Directory to cache ficsit-cli executable
         """
@@ -78,11 +78,11 @@ class FicsitCLI:
                 self.cache_dir = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "SatisfactoryModInstaller"
             else:
                 self.cache_dir = Path.home() / ".satisfactory-mod-installer"
-        
+
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.cli_path: Optional[Path] = None
         self._find_or_download_cli()
-    
+
     def _find_or_download_cli(self) -> bool:
         """Find existing ficsit-cli or download it."""
         # Check if already cached
@@ -90,35 +90,35 @@ class FicsitCLI:
             cli_name = "ficsit.exe"
         else:
             cli_name = "ficsit"
-        
+
         cached_cli = self.cache_dir / cli_name
         if cached_cli.exists():
             self.cli_path = cached_cli
             logger.info(f"Found cached ficsit-cli at {cached_cli}")
             return True
-        
+
         # Need to download
         return self._download_cli()
-    
+
     def _download_cli(self, progress_callback: Optional[Callable[[int, int], None]] = None) -> bool:
         """
         Download ficsit-cli from GitHub releases.
-        
+
         Returns:
             True if download successful
         """
         logger.info("Downloading ficsit-cli from GitHub...")
-        
+
         try:
             # Get latest release info
             response = requests.get(FICSIT_CLI_RELEASES_URL, timeout=30)
             response.raise_for_status()
             release_data = response.json()
-            
+
             # Find the appropriate asset for this platform
             system = platform.system().lower()
             machine = platform.machine().lower()
-            
+
             # Map architecture names
             if machine in ("x86_64", "amd64"):
                 arch = "amd64"
@@ -128,7 +128,7 @@ class FicsitCLI:
                 arch = "arm64"
             else:
                 arch = "amd64"  # Default
-            
+
             # Build expected asset name
             if system == "windows":
                 asset_name = f"ficsit_windows_{arch}.exe"
@@ -139,26 +139,26 @@ class FicsitCLI:
             else:
                 asset_name = f"ficsit_linux_{arch}"
                 cli_name = "ficsit"
-            
+
             # Find asset URL
             download_url = None
             for asset in release_data.get("assets", []):
                 if asset["name"] == asset_name:
                     download_url = asset["browser_download_url"]
                     break
-            
+
             if not download_url:
                 logger.error(f"Could not find ficsit-cli asset: {asset_name}")
                 return False
-            
+
             # Download the executable
             logger.info(f"Downloading {asset_name}...")
             response = requests.get(download_url, stream=True, timeout=300)
             response.raise_for_status()
-            
+
             total_size = int(response.headers.get('content-length', 0))
             downloaded = 0
-            
+
             cli_path = self.cache_dir / cli_name
             with open(cli_path, 'wb') as f:
                 for chunk in response.iter_content(chunk_size=8192):
@@ -167,40 +167,40 @@ class FicsitCLI:
                         downloaded += len(chunk)
                         if progress_callback and total_size > 0:
                             progress_callback(downloaded, total_size)
-            
+
             # Make executable on Unix
             if system != "windows":
                 os.chmod(cli_path, 0o755)
-            
+
             self.cli_path = cli_path
             logger.info(f"ficsit-cli downloaded to {cli_path}")
             return True
-            
+
         except requests.RequestException as e:
             logger.error(f"Failed to download ficsit-cli: {e}")
             return False
         except Exception as e:
             logger.error(f"Error downloading ficsit-cli: {e}")
             return False
-    
+
     def is_available(self) -> bool:
         """Check if ficsit-cli is available."""
         return self.cli_path is not None and self.cli_path.exists()
-    
+
     def _run_command(self, args: List[str], capture_output: bool = True) -> Tuple[bool, str]:
         """
         Run a ficsit-cli command.
-        
+
         Returns:
             Tuple of (success, output/error message)
         """
         if not self.is_available():
             return False, "ficsit-cli not available"
-        
+
         cmd = [str(self.cli_path)] + args
         cmd_str = ' '.join(cmd)
         logger.debug(f"Running ficsit-cli: {cmd_str}")
-        
+
         try:
             if platform.system() == "Windows":
                 # Hide console window on Windows
@@ -220,7 +220,7 @@ class FicsitCLI:
                     text=True,
                     timeout=300
                 )
-            
+
             if result.returncode == 0:
                 if capture_output and result.stdout:
                     logger.debug(f"ficsit-cli stdout: {result.stdout.strip()}")
@@ -237,14 +237,14 @@ class FicsitCLI:
                 logger.warning(f"ficsit-cli command failed: {cmd_str}")
                 logger.warning(f"ficsit-cli error: {error_msg}")
                 return False, error_msg
-                
+
         except subprocess.TimeoutExpired:
             logger.error(f"ficsit-cli command timed out: {cmd_str}")
             return False, "Command timed out"
         except Exception as e:
             logger.error(f"ficsit-cli exception: {e}")
             return False, str(e)
-    
+
     def add_installation(self, game_path: str) -> Tuple[bool, str]:
         """Add a game installation to ficsit-cli."""
         success, output = self._run_command(["installation", "add", game_path])
@@ -253,7 +253,7 @@ class FicsitCLI:
         elif "already exists" in output.lower():
             return True, f"Installation already registered: {game_path}"
         return False, output
-    
+
     def create_profile(self, profile_name: Optional[str] = None) -> Tuple[bool, str]:
         """Create a mod profile."""
         name = profile_name or self.PROFILE_NAME
@@ -264,7 +264,7 @@ class FicsitCLI:
         elif "already exists" in output.lower():
             return True, f"Profile already exists: {name}"
         return False, output
-    
+
     def add_mod_to_profile(self, mod_reference: str, profile_name: Optional[str] = None) -> Tuple[bool, str]:
         """Add a mod to a profile."""
         name = profile_name or self.PROFILE_NAME
@@ -272,7 +272,7 @@ class FicsitCLI:
         if success:
             return True, f"Added {mod_reference} to profile"
         return False, output
-    
+
     def set_installation_profile(self, game_path: str, profile_name: Optional[str] = None) -> Tuple[bool, str]:
         """Set the profile for an installation (applies mods)."""
         name = profile_name or self.PROFILE_NAME
@@ -280,71 +280,90 @@ class FicsitCLI:
         if success:
             return True, f"Applied profile {name} to installation"
         return False, output
-    
+
     def install_mods(
         self,
         game_path: str,
         mod_references: List[str],
         progress_callback: Optional[Callable[[str, str], None]] = None
-    ) -> Tuple[bool, List[str], List[str]]:
+    ) -> Tuple[bool, List[str], Dict[str, str], str]:
         """
         Install mods using ficsit-cli.
-        
+
         Args:
             game_path: Path to Satisfactory installation
             mod_references: List of mod references to install
             progress_callback: Optional callback(mod_ref, status_message)
-        
+
         Returns:
-            Tuple of (overall_success, successful_mods, failed_mods)
+            Tuple of (overall_success, successful_mods, failed_mods_with_errors, diagnostic_info)
+            - failed_mods_with_errors: Dict mapping mod_ref to error message
+            - diagnostic_info: String with step-by-step status
         """
         successful = []
-        failed = []
-        
+        failed_with_errors: Dict[str, str] = {}
+        diagnostics = []
+
         # Step 1: Add installation
         if progress_callback:
             progress_callback("", "Registering game installation...")
-        
+
         success, msg = self.add_installation(game_path)
-        if not success:
+        if success:
+            diagnostics.append(f"[OK] Registration: {msg}")
+        else:
+            diagnostics.append(f"[FAILED] Registration: {msg}")
             logger.error(f"Failed to add installation: {msg}")
-            return False, [], mod_references
-        
+            # Return all mods as failed with the same error
+            for ref in mod_references:
+                failed_with_errors[ref] = f"Installation registration failed: {msg}"
+            return False, [], failed_with_errors, "\n".join(diagnostics)
+
         # Step 2: Create profile
         if progress_callback:
             progress_callback("", "Creating mod profile...")
-        
+
         success, msg = self.create_profile()
-        if not success:
+        if success:
+            diagnostics.append(f"[OK] Profile: {msg}")
+            logger.info(f"Profile ready: {msg}")
+        else:
+            diagnostics.append(f"[FAILED] Profile: {msg}")
             logger.error(f"Failed to create profile: {msg}")
-            return False, [], mod_references
-        
-        logger.info(f"Profile ready: {msg}")
-        
+            # Return all mods as failed with the same error
+            for ref in mod_references:
+                failed_with_errors[ref] = f"Profile creation failed: {msg}"
+            return False, [], failed_with_errors, "\n".join(diagnostics)
+
         # Step 3: Add each mod to the profile
         for mod_ref in mod_references:
             if progress_callback:
                 progress_callback(mod_ref, f"Adding {mod_ref} to profile...")
-            
+
             success, msg = self.add_mod_to_profile(mod_ref)
             if success:
                 successful.append(mod_ref)
                 logger.info(f"Added {mod_ref} to profile")
             else:
-                failed.append(mod_ref)
+                failed_with_errors[mod_ref] = msg
                 logger.warning(f"Failed to add {mod_ref}: {msg}")
-        
+
+        diagnostics.append(f"[INFO] Mods added: {len(successful)}/{len(mod_references)}")
+
         # Step 4: Apply profile to installation (this downloads and installs)
         if progress_callback:
             progress_callback("", "Applying profile (downloading and installing mods)...")
-        
+
         success, msg = self.set_installation_profile(game_path)
-        if not success:
+        if success:
+            diagnostics.append(f"[OK] Profile applied: {msg}")
+        else:
+            diagnostics.append(f"[FAILED] Profile apply: {msg}")
             logger.error(f"Failed to apply profile: {msg}")
-            return False, successful, failed
-        
-        return len(failed) == 0, successful, failed
-    
+            return False, successful, failed_with_errors, "\n".join(diagnostics)
+
+        return len(failed_with_errors) == 0, successful, failed_with_errors, "\n".join(diagnostics)
+
     def get_version(self) -> Optional[str]:
         """Get ficsit-cli version."""
         success, output = self._run_command(["--version"])

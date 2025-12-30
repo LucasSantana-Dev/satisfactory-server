@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.3] - 2024-12-30
+
+### Added (Client Mod Installer)
+
+- **Verbose ficsit-cli error output** for debugging
+  - Now shows actual error messages instead of just "failed via ficsit-cli"
+  - Displays step-by-step diagnostics: Registration, Profile creation, Mod additions
+  - Example: `[WARN] SmartFoundations failed: profile with name ServerMods does not exist`
+
+### Changed
+
+- `install_mods()` now returns detailed error messages with each failed mod
+- GUI displays diagnostic info showing which step succeeded/failed
+- Better error truncation for long error messages (max 100 chars)
+
 ## [1.1.2] - 2024-12-30
 
 ### Fixed (Client Mod Installer)

@@ -517,11 +517,17 @@ class ModInstallerApp(ctk.CTk):
                     pass
 
         try:
-            success, successful_mods, failed_mods = self.ficsit_cli.install_mods(
+            success, successful_mods, failed_mods_with_errors, diagnostics = self.ficsit_cli.install_mods(
                 self.game_path,
                 mod_refs,
                 progress_callback
             )
+
+            # Log diagnostic information
+            self.after(0, lambda: self.log(""))
+            self.after(0, lambda: self.log("[DEBUG] ficsit-cli diagnostics:"))
+            for diag_line in diagnostics.split("\n"):
+                self.after(0, lambda line=diag_line: self.log(f"  {line}"))
 
             # Count dependencies as successful since ficsit-cli auto-installs them
             total_successful = len(successful_mods) + len(dependency_mods)
@@ -529,17 +535,19 @@ class ModInstallerApp(ctk.CTk):
             if success:
                 self.after(0, lambda: self.log(f"[OK] ficsit-cli installed {len(successful_mods)} mods + {len(dependency_mods)} auto-resolved dependencies"))
                 self.after(0, lambda: self._on_installation_complete(
-                    total_successful, len(failed_mods), 0
+                    total_successful, len(failed_mods_with_errors), 0
                 ))
             else:
-                # Log failures and try fallback for failed mods
-                for failed_ref in failed_mods:
-                    self.after(0, lambda r=failed_ref: self.log(f"[WARN] {r} failed via ficsit-cli"))
+                # Log failures WITH actual error messages
+                for failed_ref, error_msg in failed_mods_with_errors.items():
+                    # Truncate long error messages
+                    short_error = error_msg[:100] + "..." if len(error_msg) > 100 else error_msg
+                    self.after(0, lambda r=failed_ref, e=short_error: self.log(f"[WARN] {r} failed: {e}"))
 
-                if failed_mods and len(successful_mods) > 0:
+                if failed_mods_with_errors and len(successful_mods) > 0:
                     self.after(0, lambda: self.log("[INFO] Trying fallback for failed mods..."))
                     # Get the failed mod objects (only from leaf mods, not dependencies)
-                    failed_mod_objs = [m for m in leaf_mods if m.mod_reference in failed_mods]
+                    failed_mod_objs = [m for m in leaf_mods if m.mod_reference in failed_mods_with_errors]
                     self._install_with_direct_download_internal(
                         failed_mod_objs,
                         total_successful,
@@ -548,7 +556,7 @@ class ModInstallerApp(ctk.CTk):
                     )
                 else:
                     self.after(0, lambda: self._on_installation_complete(
-                        total_successful, len(failed_mods), 0
+                        total_successful, len(failed_mods_with_errors), 0
                     ))
 
         except Exception as e:
