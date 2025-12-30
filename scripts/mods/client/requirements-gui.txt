@@ -1,0 +1,15 @@
+# Satisfactory Mod Installer GUI - Python Dependencies
+# Install with: pip install -r requirements-gui.txt
+
+# GUI Framework - Modern themed Tkinter
+customtkinter>=5.2.0
+
+# HTTP Client - For API requests and downloads
+requests>=2.31.0
+
+# Image handling - Required by CustomTkinter for icons
+Pillow>=10.0.0
+
+# Build Tools (optional - only for building .exe)
+# Uncomment to install:
+# pyinstaller>=6.0.0

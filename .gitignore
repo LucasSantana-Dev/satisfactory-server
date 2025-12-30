@@ -1,0 +1,36 @@
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Data directory (contains game saves, configs, backups)
+data/
+
+# Cloudflare credentials
+cloudflared/credentials.json
+cloudflared/*.pem
+
+# Logs
+*.log
+logs/
+
+# Docker
+.docker/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+
+__pycache__/
+*.pyc

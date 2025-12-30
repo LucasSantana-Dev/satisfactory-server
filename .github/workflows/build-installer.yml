@@ -1,0 +1,92 @@
+name: Build Mod Installer
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/mods/client/**'
+      - '.github/workflows/build-installer.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/mods/client/**'
+  workflow_dispatch:
+  release:
+    types: [created]
+
+jobs:
+  build-windows:
+    name: Build Windows Executable
+    runs-on: windows-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: 'scripts/mods/client/requirements-gui.txt'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r scripts/mods/client/requirements-gui.txt
+          pip install pyinstaller
+
+      - name: Build executable
+        working-directory: scripts/mods/client
+        run: |
+          pyinstaller --clean --noconfirm SatisfactoryModInstaller.spec
+
+      - name: Verify build
+        working-directory: scripts/mods/client
+        run: |
+          if (Test-Path "dist/SatisfactoryModInstaller.exe") {
+            $size = (Get-Item "dist/SatisfactoryModInstaller.exe").Length / 1MB
+            Write-Host "Build successful! Size: $([math]::Round($size, 2)) MB"
+          } else {
+            Write-Error "Build failed - executable not found"
+            exit 1
+          }
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SatisfactoryModInstaller-Windows
+          path: scripts/mods/client/dist/SatisfactoryModInstaller.exe
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Upload to Release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v1
+        with:
+          files: scripts/mods/client/dist/SatisfactoryModInstaller.exe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  create-release:
+    name: Create Release (on tag)
+    runs-on: ubuntu-latest
+    needs: build-windows
+    if: startsWith(github.ref, 'refs/tags/v')
+    
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: SatisfactoryModInstaller-Windows
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: SatisfactoryModInstaller.exe
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+

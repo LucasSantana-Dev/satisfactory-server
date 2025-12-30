@@ -1,0 +1,44 @@
+# Cloudflare Tunnel Configuration
+# This file is used when running cloudflared with a config file
+# For token-based authentication (recommended), cloudflared uses TUNNEL_TOKEN env var
+# This config file is optional but can be used for additional settings
+
+# If using config-based setup instead of token, uncomment and configure:
+# tunnel: your-tunnel-id-here
+# credentials-file: /etc/cloudflared/credentials.json
+
+# Ingress rules for routing traffic
+# Note: When using TUNNEL_TOKEN, ingress rules are configured in Cloudflare dashboard
+# This file can be used for local development or custom routing
+ingress:
+  # Route game server traffic (TCP)
+  # For UDP support, use Cloudflare Private Network with WARP routing
+  - service: tcp://satisfactory:7777
+    originRequest:
+      noHappyEyeballs: true
+      tcpKeepAlive: 30s
+      keepAliveConnections: 100
+      keepAliveTimeout: 90s
+      connectTimeout: 30s
+
+  # Route messaging port (TCP)
+  - service: tcp://satisfactory:8888
+    originRequest:
+      noHappyEyeballs: true
+      tcpKeepAlive: 30s
+      keepAliveConnections: 100
+      keepAliveTimeout: 90s
+      connectTimeout: 30s
+
+  # Catch-all rule (must be last)
+  - service: http_status:404
+
+# Private network routing for UDP support
+# Enable WARP routing in Cloudflare dashboard for full UDP support
+# This requires Cloudflare WARP client on client machines
+warp-routing:
+  enabled: true
+
+# Metrics and logging
+metrics: 0.0.0.0:9090
+loglevel: info

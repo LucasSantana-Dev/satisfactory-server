@@ -1,0 +1,105 @@
+services:
+  satisfactory:
+    container_name: satisfactory-server
+    hostname: satisfactory-server
+    image: wolveix/satisfactory-server:latest
+    restart: unless-stopped
+    labels:
+      - "com.satisfactory.server=true"
+      - "com.satisfactory.version=latest"
+    ports:
+      - "${SERVER_GAME_PORT:-7777}:7777/tcp"
+      - "${SERVER_GAME_PORT:-7777}:7777/udp"
+      - "${SERVER_MESSAGING_PORT:-8888}:8888/tcp"
+      - "${SERVER_QUERY_PORT:-15000}:15000/tcp"
+      - "${SERVER_BEACON_PORT:-15777}:15777/udp"
+    volumes:
+      - ./data:/config
+    environment:
+      - MAXPLAYERS=${MAXPLAYERS:-4}
+      - PGID=${PGID:-1000}
+      - PUID=${PUID:-1000}
+      - STEAMBETA=${STEAMBETA:-false}
+      - AUTOSAVENUM=${AUTOSAVENUM:-5}
+      - AUTOSAVEINTERVAL=${AUTOSAVEINTERVAL:-300}
+      - AUTOPAUSE=${AUTOPAUSE:-true}
+      - AUTOSAVEONDISCONNECT=${AUTOSAVEONDISCONNECT:-true}
+      - CRASHREPORT=${CRASHREPORT:-true}
+      - NETWORKQUALITY=${NETWORKQUALITY:-3}
+      - SERVERGAMEPORT=${SERVER_GAME_PORT:-7777}
+      - SERVERMESSAGINGPORT=${SERVER_MESSAGING_PORT:-8888}
+      - MAXOBJECTS=${MAXOBJECTS:-2162688}
+      - MAXTICKRATE=${MAXTICKRATE:-30}
+      - TIMEOUT=${TIMEOUT:-30}
+      - SERVERSTREAMING=${SERVER_STREAMING:-true}
+      - LOG=${LOG:-false}
+      - DEBUG=${DEBUG:-false}
+      - DISABLESEASONALEVENTS=${DISABLE_SEASONAL_EVENTS:-false}
+      - SKIPUPDATE=${SKIPUPDATE:-false}
+    deploy:
+      resources:
+        limits:
+          memory: ${MEMORY_LIMIT:-8G}
+        reservations:
+          memory: ${MEMORY_RESERVATION:-4G}
+    networks:
+      - satisfactory-network
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f FactoryServer || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  cloudflared:
+    container_name: satisfactory-cloudflared
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    # Requires CLOUDFLARE_TUNNEL_TOKEN in .env
+    # Get token from: https://one.dash.cloudflare.com/ > Networks > Tunnels
+    command: tunnel --loglevel info run
+    environment:
+      # REQUIRED: Must be set in .env file - no default value
+      - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN:?CLOUDFLARE_TUNNEL_TOKEN is required - get from Cloudflare dashboard}
+    networks:
+      - satisfactory-network
+    depends_on:
+      satisfactory:
+        condition: service_started
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+  sftp-server:
+    container_name: satisfactory-sftp
+    image: atmoz/sftp:latest
+    restart: unless-stopped
+    profiles:
+      - sftp  # Only start if explicitly requested: docker compose --profile sftp up -d
+    volumes:
+      - ./data:/home/${SFTP_USER:-satisfactory}/data
+    ports:
+      - "${SFTP_PORT:-2222}:22"
+    # SECURITY: SFTP_PASSWORD must be set in .env - no default value
+    command: ${SFTP_USER:-satisfactory}:${SFTP_PASSWORD:?SFTP_PASSWORD is required - set a strong password in .env}:1000
+    networks:
+      - satisfactory-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+networks:
+  satisfactory-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.19.0.0/16

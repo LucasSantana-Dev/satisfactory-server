@@ -1,0 +1,196 @@
+{
+  "mods": [
+    {
+      "name": "Satisfactory Mod Loader",
+      "mod_reference": "SML",
+      "category": "dependency",
+      "required": true,
+      "priority": 0,
+      "description": "Required for ALL mods. Must be installed first."
+    },
+    {
+      "name": "Pak Utility Mod",
+      "mod_reference": "UtilityMod",
+      "category": "dependency",
+      "required": true,
+      "priority": 1,
+      "description": "Required dependency for most mods. Must be installed first."
+    },
+    {
+      "name": "Smart!",
+      "mod_reference": "SmartFoundations",
+      "category": "quality-of-life",
+      "required": false,
+      "priority": 2,
+      "description": "Mass building of foundations, walls, and more"
+    },
+    {
+      "name": "Micro Manage",
+      "mod_reference": "MicroManage",
+      "category": "quality-of-life",
+      "required": false,
+      "priority": 2,
+      "description": "Precise object positioning, rotation, and scaling"
+    },
+    {
+      "name": "Efficiency Checker Mod",
+      "mod_reference": "EfficiencyCheckerMod",
+      "category": "quality-of-life",
+      "required": false,
+      "priority": 2,
+      "description": "Monitor production line efficiency and identify bottlenecks"
+    },
+    {
+      "name": "Infinite Zoop",
+      "mod_reference": "InfiniteZoop",
+      "category": "quality-of-life",
+      "required": false,
+      "priority": 2,
+      "description": "Unlimited zoop range for building"
+    },
+    {
+      "name": "Infinite Nudge",
+      "mod_reference": "InfiniteNudge",
+      "category": "quality-of-life",
+      "required": false,
+      "priority": 2,
+      "description": "Unlimited nudge range for placing objects"
+    },
+    {
+      "name": "Structural Solutions",
+      "mod_reference": "SS_Mod",
+      "category": "quality-of-life",
+      "required": false,
+      "priority": 2,
+      "description": "More building options and structures"
+    },
+    {
+      "name": "Modular Load Balancers",
+      "mod_reference": "LoadBalancers",
+      "category": "quality-of-life",
+      "required": false,
+      "priority": 2,
+      "description": "Better load balancing for conveyor belts"
+    },
+    {
+      "name": "MAM Enhancer",
+      "mod_reference": "MAMTips",
+      "category": "quality-of-life",
+      "required": false,
+      "priority": 2,
+      "description": "Enhanced MAM research interface"
+    },
+    {
+      "name": "MiniMap",
+      "mod_reference": "MiniMap",
+      "category": "quality-of-life",
+      "required": false,
+      "priority": 2,
+      "description": "In-game minimap for navigation"
+    },
+    {
+      "name": "Refined Power",
+      "mod_reference": "RefinedPower",
+      "category": "content",
+      "required": false,
+      "priority": 3,
+      "description": "New power generation (solar, wind, nuclear variants)"
+    },
+    {
+      "name": "Ficsit Farming",
+      "mod_reference": "FicsitFarming",
+      "category": "content",
+      "required": false,
+      "priority": 3,
+      "description": "Farming mechanics and food production"
+    },
+    {
+      "name": "Teleporter",
+      "mod_reference": "Teleporter",
+      "category": "content",
+      "required": false,
+      "priority": 3,
+      "description": "Instant travel between locations"
+    },
+    {
+      "name": "Linear Motion",
+      "mod_reference": "LinearMotion",
+      "category": "content",
+      "required": false,
+      "priority": 3,
+      "description": "Moving platforms and elevators"
+    },
+    {
+      "name": "Mk++",
+      "mod_reference": "MK22k20",
+      "category": "content",
+      "required": false,
+      "priority": 3,
+      "description": "Higher tier buildings and machines"
+    },
+    {
+      "name": "Fluid Extras",
+      "mod_reference": "AB_FluidExtras",
+      "category": "content",
+      "required": false,
+      "priority": 3,
+      "description": "Additional fluid handling options"
+    },
+    {
+      "name": "Storage Teleporter",
+      "mod_reference": "StorageTeleporter",
+      "category": "content",
+      "required": false,
+      "priority": 3,
+      "description": "Teleport items between storage containers"
+    },
+    {
+      "name": "Big Storage Tank",
+      "mod_reference": "BigStorageTank",
+      "category": "content",
+      "required": false,
+      "priority": 3,
+      "description": "Large storage tanks for fluids"
+    },
+    {
+      "name": "Container Screens",
+      "mod_reference": "ContainerScreen",
+      "category": "content",
+      "required": false,
+      "priority": 3,
+      "description": "Display screens for containers"
+    },
+    {
+      "name": "Item Dispenser",
+      "mod_reference": "Dispenser",
+      "category": "content",
+      "required": false,
+      "priority": 3,
+      "description": "Dispense items automatically"
+    },
+    {
+      "name": "EasyCheat",
+      "mod_reference": "EasyCheat",
+      "category": "cheat",
+      "required": false,
+      "priority": 4,
+      "description": "Simple cheat menu for resources and unlocks"
+    },
+    {
+      "name": "PowerSuit",
+      "mod_reference": "PowerSuit",
+      "category": "cheat",
+      "required": false,
+      "priority": 4,
+      "description": "Enhanced player abilities and stats"
+    },
+    {
+      "name": "Additional 300 Inventory Slots",
+      "mod_reference": "Additional_300_Inventory_Slots",
+      "category": "cheat",
+      "required": false,
+      "priority": 4,
+      "description": "Extra inventory space"
+    }
+  ]
+}
