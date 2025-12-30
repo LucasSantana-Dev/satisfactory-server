@@ -113,7 +113,7 @@ def get_file_hash(filepath: Path) -> str:
     return md5.hexdigest()
 
 def extract_smod(smod_path: Path, mod_reference: str) -> bool:
-    """Extract .smod file and install mod files."""
+    """Extract .smod file and install mod files with FULL directory structure."""
     try:
         # Create a temporary extraction directory
         extract_dir = TEMP_DIR / f"extract_{mod_reference}"
@@ -125,34 +125,36 @@ def extract_smod(smod_path: Path, mod_reference: str) -> bool:
         with zipfile.ZipFile(smod_path, 'r') as zf:
             zf.extractall(extract_dir)
 
-        # Find and copy the mod files
-        # Structure: Content/Paks/LinuxServer/*.pak, *.ucas, *.utoc
-        paks_dir = extract_dir / "Content" / "Paks" / "LinuxServer"
-
-        if not paks_dir.exists():
-            # Try alternative structure
-            paks_dir = extract_dir / "Content" / "Paks"
-            if not paks_dir.exists():
-                print_error(f"Could not find Paks directory in {mod_reference}")
-                return False
-
-        # Create mod directory
+        # Remove old mod directory if exists
         mod_dest = MODS_DIR / mod_reference
-        mod_dest.mkdir(parents=True, exist_ok=True)
+        if mod_dest.exists():
+            shutil.rmtree(mod_dest)
 
-        # Copy pak files
+        # Copy ENTIRE mod structure, not just pak files
+        # First, copy the root level files (.uplugin, .smm, etc.)
         files_copied = 0
-        for ext in ["*.pak", "*.ucas", "*.utoc"]:
-            for file in paks_dir.glob(ext):
-                dest_file = mod_dest / file.name
-                shutil.copy2(file, dest_file)
+        for item in extract_dir.iterdir():
+            dest_path = mod_dest / item.name
+            if item.is_file():
+                mod_dest.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(item, dest_path)
                 files_copied += 1
+            elif item.is_dir():
+                # Copy directories (Content, Binaries, Config, Resources, etc.)
+                if item.name in ["Content", "Binaries", "Config", "Resources"]:
+                    shutil.copytree(item, dest_path)
+                    files_copied += sum(1 for _ in dest_path.rglob("*") if _.is_file())
 
-        # Also copy the uplugin file if it exists
-        uplugin_files = list(extract_dir.glob("*.uplugin"))
-        if uplugin_files:
-            shutil.copy2(uplugin_files[0], mod_dest / uplugin_files[0].name)
-            files_copied += 1
+        # Also copy pak files from Content/Paks/LinuxServer/ to mod root
+        paks_dir = extract_dir / "Content" / "Paks" / "LinuxServer"
+        if paks_dir.exists():
+            mod_dest.mkdir(parents=True, exist_ok=True)
+            for ext in ["*.pak", "*.ucas", "*.utoc"]:
+                for file in paks_dir.glob(ext):
+                    dest_file = mod_dest / file.name
+                    if not dest_file.exists():  # Don't overwrite if already copied
+                        shutil.copy2(file, dest_file)
+                        files_copied += 1
 
         # Cleanup
         shutil.rmtree(extract_dir)
