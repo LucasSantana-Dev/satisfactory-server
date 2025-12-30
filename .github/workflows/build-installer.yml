@@ -2,17 +2,21 @@ name: Build Mod Installer
 
 on:
   push:
-    branches: [main]
+    branches: [main, master]
     paths:
       - 'scripts/mods/client/**'
       - '.github/workflows/build-installer.yml'
   pull_request:
-    branches: [main]
+    branches: [main, master]
     paths:
       - 'scripts/mods/client/**'
   workflow_dispatch:
   release:
     types: [created]
+
+env:
+  PYTHON_VERSION: '3.11'
+  APP_NAME: 'SatisfactoryModInstaller'
 
 jobs:
   build-windows:
@@ -20,73 +24,230 @@ jobs:
     runs-on: windows-latest
     
     steps:
+      # ========================================
+      # CHECKOUT
+      # ========================================
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: List source files
+        working-directory: scripts/mods/client
+        run: |
+          Write-Host "=== Source Files ===" -ForegroundColor Cyan
+          Get-ChildItem -Recurse | ForEach-Object {
+            Write-Host $_.FullName
+          }
+
+      # ========================================
+      # PYTHON SETUP
+      # ========================================
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
           cache-dependency-path: 'scripts/mods/client/requirements-gui.txt'
 
-      - name: Install dependencies
+      - name: Verify Python installation
         run: |
+          Write-Host "=== Python Version ===" -ForegroundColor Cyan
+          python --version
+          Write-Host ""
+          Write-Host "=== Python Path ===" -ForegroundColor Cyan
+          python -c "import sys; print(sys.executable)"
+          Write-Host ""
+          Write-Host "=== Pip Version ===" -ForegroundColor Cyan
+          pip --version
+
+      # ========================================
+      # DEPENDENCIES
+      # ========================================
+      - name: Upgrade pip
+        run: |
+          Write-Host "=== Upgrading pip ===" -ForegroundColor Cyan
           python -m pip install --upgrade pip
+
+      - name: Install application dependencies
+        run: |
+          Write-Host "=== Installing requirements-gui.txt ===" -ForegroundColor Cyan
           pip install -r scripts/mods/client/requirements-gui.txt
+          
+      - name: Install PyInstaller
+        run: |
+          Write-Host "=== Installing PyInstaller ===" -ForegroundColor Cyan
           pip install pyinstaller
+          
+      - name: Verify installed packages
+        run: |
+          Write-Host "=== Installed Packages ===" -ForegroundColor Cyan
+          pip list
+          Write-Host ""
+          Write-Host "=== CustomTkinter Version ===" -ForegroundColor Cyan
+          python -c "import customtkinter; print(customtkinter.__version__)"
+          Write-Host ""
+          Write-Host "=== PyInstaller Version ===" -ForegroundColor Cyan
+          pyinstaller --version
 
-      - name: Build executable
+      # ========================================
+      # VALIDATE SOURCE CODE
+      # ========================================
+      - name: Validate Python syntax
         working-directory: scripts/mods/client
         run: |
+          Write-Host "=== Validating mod_installer_core.py ===" -ForegroundColor Cyan
+          python -m py_compile mod_installer_core.py
+          Write-Host "OK" -ForegroundColor Green
+          
+          Write-Host ""
+          Write-Host "=== Validating mod_installer_gui.py ===" -ForegroundColor Cyan
+          python -m py_compile mod_installer_gui.py
+          Write-Host "OK" -ForegroundColor Green
+
+      - name: Test imports
+        working-directory: scripts/mods/client
+        run: |
+          Write-Host "=== Testing core module imports ===" -ForegroundColor Cyan
+          python -c "from mod_installer_core import GamePathDetector, ModManager, FicsitAPIClient; print('Core imports OK')"
+          
+          Write-Host ""
+          Write-Host "=== Testing GUI module imports ===" -ForegroundColor Cyan
+          python -c "import customtkinter; import requests; import PIL; print('GUI imports OK')"
+
+      # ========================================
+      # BUILD EXECUTABLE
+      # ========================================
+      - name: Create build directory
+        working-directory: scripts/mods/client
+        run: |
+          Write-Host "=== Creating build directories ===" -ForegroundColor Cyan
+          New-Item -ItemType Directory -Force -Path "dist" | Out-Null
+          New-Item -ItemType Directory -Force -Path "build" | Out-Null
+          Write-Host "Directories created" -ForegroundColor Green
+
+      - name: Run PyInstaller
+        working-directory: scripts/mods/client
+        run: |
+          Write-Host "=== Starting PyInstaller Build ===" -ForegroundColor Cyan
+          Write-Host "Spec file: SatisfactoryModInstaller.spec"
+          Write-Host ""
+          
           pyinstaller --clean --noconfirm SatisfactoryModInstaller.spec
+          
+          Write-Host ""
+          Write-Host "=== PyInstaller completed ===" -ForegroundColor Green
 
-      - name: Verify build
+      # ========================================
+      # VERIFY BUILD OUTPUT
+      # ========================================
+      - name: Check build output exists
         working-directory: scripts/mods/client
         run: |
-          if (Test-Path "dist/SatisfactoryModInstaller.exe") {
-            $size = (Get-Item "dist/SatisfactoryModInstaller.exe").Length / 1MB
-            Write-Host "Build successful! Size: $([math]::Round($size, 2)) MB"
+          Write-Host "=== Checking dist folder ===" -ForegroundColor Cyan
+          Get-ChildItem -Path "dist" -Recurse | ForEach-Object {
+            Write-Host $_.FullName
+          }
+
+      - name: Verify executable
+        working-directory: scripts/mods/client
+        run: |
+          $exePath = "dist/${{ env.APP_NAME }}.exe"
+          
+          Write-Host "=== Verifying executable ===" -ForegroundColor Cyan
+          Write-Host "Expected path: $exePath"
+          
+          if (Test-Path $exePath) {
+            $file = Get-Item $exePath
+            $sizeMB = [math]::Round($file.Length / 1MB, 2)
+            
+            Write-Host ""
+            Write-Host "SUCCESS: Executable found!" -ForegroundColor Green
+            Write-Host "  Path: $($file.FullName)"
+            Write-Host "  Size: $sizeMB MB"
+            Write-Host "  Created: $($file.CreationTime)"
           } else {
-            Write-Error "Build failed - executable not found"
+            Write-Host "ERROR: Executable not found at $exePath" -ForegroundColor Red
+            Write-Host ""
+            Write-Host "Contents of dist folder:"
+            Get-ChildItem -Path "dist" -Recurse -ErrorAction SilentlyContinue
             exit 1
           }
 
-      - name: Upload artifact
+      - name: Get executable metadata
+        working-directory: scripts/mods/client
+        run: |
+          $exePath = "dist/${{ env.APP_NAME }}.exe"
+          
+          Write-Host "=== Executable Metadata ===" -ForegroundColor Cyan
+          
+          # Get file hash for verification
+          $hash = Get-FileHash -Path $exePath -Algorithm SHA256
+          Write-Host "SHA256: $($hash.Hash)"
+          
+          # Get version info if available
+          $versionInfo = (Get-Item $exePath).VersionInfo
+          Write-Host "Product: $($versionInfo.ProductName)"
+          Write-Host "Version: $($versionInfo.ProductVersion)"
+
+      # ========================================
+      # UPLOAD ARTIFACTS
+      # ========================================
+      - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SatisfactoryModInstaller-Windows
-          path: scripts/mods/client/dist/SatisfactoryModInstaller.exe
+          name: ${{ env.APP_NAME }}-Windows
+          path: scripts/mods/client/dist/${{ env.APP_NAME }}.exe
           retention-days: 30
           if-no-files-found: error
+          compression-level: 9
 
-      - name: Upload to Release
+      - name: Upload build logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs
+          path: |
+            scripts/mods/client/build/**/*.txt
+            scripts/mods/client/build/**/*.html
+          retention-days: 7
+          if-no-files-found: ignore
+
+      # ========================================
+      # RELEASE (only on release event)
+      # ========================================
+      - name: Upload to GitHub Release
         if: github.event_name == 'release'
         uses: softprops/action-gh-release@v1
         with:
-          files: scripts/mods/client/dist/SatisfactoryModInstaller.exe
+          files: scripts/mods/client/dist/${{ env.APP_NAME }}.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+  # ========================================
+  # CREATE RELEASE ON TAG
+  # ========================================
   create-release:
-    name: Create Release (on tag)
+    name: Create Release (on version tag)
     runs-on: ubuntu-latest
     needs: build-windows
     if: startsWith(github.ref, 'refs/tags/v')
     
     steps:
-      - name: Download artifact
+      - name: Download Windows artifact
         uses: actions/download-artifact@v4
         with:
-          name: SatisfactoryModInstaller-Windows
+          name: ${{ env.APP_NAME }}-Windows
 
-      - name: Create Release
+      - name: Display downloaded files
+        run: |
+          echo "=== Downloaded artifacts ==="
+          ls -la
+
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
-          files: SatisfactoryModInstaller.exe
+          files: ${{ env.APP_NAME }}.exe
           generate_release_notes: true
           draft: false
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
