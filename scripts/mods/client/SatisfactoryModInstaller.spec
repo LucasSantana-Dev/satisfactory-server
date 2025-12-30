@@ -88,7 +88,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon='assets/icon.ico' if sys.platform == 'win32' else None,
+    icon=None,  # No custom icon - use default
     version_info=None,  # Can add Windows version info here
 )
 
