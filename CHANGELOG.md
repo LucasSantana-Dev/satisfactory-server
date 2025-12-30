@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.3] - 2024-12-30
+
+### Fixed
+
+- **Server mod extraction**: Fixed critical bug where mods were installed without full directory structure
+  - Server was only extracting `.pak` files, missing `Binaries/`, `Content/`, `Config/` directories
+  - This caused server crashes when loading any mod except the original 4
+  - Now correctly extracts full mod structure from `.smod` archives
+  - Server now runs successfully with all 44 mods
+
+### Removed
+
+- **Smart! (SmartFoundations)**: No longer available on ficsit.app
+- **Container Screens (ContainerScreen)**: No longer available on ficsit.app
+
+### Changed
+
+- **Client installer**: Synced embedded config with server config (44 mods total)
+  - Automatic cleanup in Phase 0 now removes all deprecated/unavailable mods
+  - Users with old mods installed will have them automatically cleaned up
+
 ## [1.2.2] - 2024-12-30
 
 ### Added
