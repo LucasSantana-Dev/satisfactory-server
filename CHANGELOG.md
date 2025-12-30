@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.2] - 2024-12-30
+
+### Added
+
+- **Automatic Cleanup Feature**: Installer now removes obsolete/broken mods before installation
+  - Phase 0 added to installation workflow: "Cleanup Obsolete Mods"
+  - Automatically detects and removes mod folders that are not in the valid mod list
+  - Prevents "module not found" errors from old broken mods lingering in the Mods folder
+  - Logs all removed mods for user visibility
+
+### Removed
+
+- **MicroManage**: Marked as BROKEN on ficsit.app (broken by Update 8, last updated April 2023)
+- **Teleporter**: Marked as BROKEN on ficsit.app (broken by Satisfactory 1.0)
+- **Mk++ (MK22k20)**: Marked as BROKEN on ficsit.app (broken since 1.0, consider Industrial Evolution)
+
+### Fixed
+
+- Fixed "Plugin 'X' failed to load because module 'X' could not be found" errors
+  - These errors were caused by broken mods remaining in the Mods folder from previous installs
+  - The new cleanup feature automatically removes these obsolete mod folders
+
+### Technical
+
+- Added `cleanup_obsolete_mods()` method to `PreVerifyInstaller` class
+- Updated GUI installation workflow to include cleanup phase (Phase 0)
+- Updated embedded mod config to remove broken mods
+- Installation workflow now has 6 phases (0-5) instead of 5 (1-5)
+
 ## [1.2.1] - 2024-12-30
 
 ### Added

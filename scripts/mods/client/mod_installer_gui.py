@@ -463,7 +463,7 @@ class ModInstallerApp(ctk.CTk):
 
     def _run_preverify_installation(self, selected_refs: List[str]):
         """Run the pre-verify installation workflow in background."""
-        phase_count = 5
+        phase_count = 6  # Now includes cleanup phase
         current_phase = 0
 
         def progress_callback(mod_ref: str, status: str):
@@ -478,16 +478,39 @@ class ModInstallerApp(ctk.CTk):
                 pct = downloaded / total
                 status = f"Downloading... {downloaded // 1024}KB / {total // 1024}KB"
                 # Progress within phase 4
-                progress = (3 / phase_count) + (pct / phase_count)
+                progress = (4 / phase_count) + (pct / phase_count)
                 self.after(0, lambda p=progress, s=status: self._update_progress(p, s))
 
         try:
+            # Phase 0: Cleanup obsolete mods
+            current_phase = 0
+            self.after(0, lambda: self.log(""))
+            self.after(0, lambda: self.log("[PHASE 0] Cleanup Obsolete Mods"))
+            self.after(0, lambda: self.log("-" * 40))
+            self.after(0, lambda: self._update_progress(0.05, "Cleaning up obsolete mods..."))
+
+            # Get all valid mod refs from our config
+            valid_refs = [mod.mod_reference for mod in (self.mod_manager.mods if self.mod_manager else [])]
+            removed, failed = self.pre_verify_installer.cleanup_obsolete_mods(
+                valid_refs, progress_callback
+            )
+
+            if removed:
+                self.after(0, lambda: self.log(f"  Removed {len(removed)} obsolete mod(s):"))
+                for ref in removed:
+                    self.after(0, lambda r=ref: self.log(f"    - {r}"))
+            else:
+                self.after(0, lambda: self.log("  No obsolete mods to remove"))
+
+            if failed:
+                self.after(0, lambda: self.log(f"  [WARN] Failed to remove {len(failed)} mod(s)"))
+
             # Phase 1: Resolve dependencies
             current_phase = 1
             self.after(0, lambda: self.log(""))
             self.after(0, lambda: self.log("[PHASE 1] Resolving Dependencies"))
             self.after(0, lambda: self.log("-" * 40))
-            self.after(0, lambda: self._update_progress(0.1, "Resolving dependencies..."))
+            self.after(0, lambda: self._update_progress(0.15, "Resolving dependencies..."))
 
             result = self.pre_verify_installer.phase1_resolve_dependencies(
                 selected_refs, progress_callback
@@ -503,7 +526,7 @@ class ModInstallerApp(ctk.CTk):
             self.after(0, lambda: self.log(""))
             self.after(0, lambda: self.log("[PHASE 2] Scanning Installed Mods"))
             self.after(0, lambda: self.log("-" * 40))
-            self.after(0, lambda: self._update_progress(0.3, "Scanning installed mods..."))
+            self.after(0, lambda: self._update_progress(0.35, "Scanning installed mods..."))
 
             result = self.pre_verify_installer.phase2_scan_installed(progress_callback)
             self._log_phase_result(result)
@@ -513,7 +536,7 @@ class ModInstallerApp(ctk.CTk):
             self.after(0, lambda: self.log(""))
             self.after(0, lambda: self.log("[PHASE 3] Gap Analysis"))
             self.after(0, lambda: self.log("-" * 40))
-            self.after(0, lambda: self._update_progress(0.4, "Analyzing gaps..."))
+            self.after(0, lambda: self._update_progress(0.5, "Analyzing gaps..."))
 
             result = self.pre_verify_installer.phase3_gap_analysis(progress_callback)
             self._log_phase_result(result)
@@ -530,7 +553,7 @@ class ModInstallerApp(ctk.CTk):
             self.after(0, lambda: self.log(""))
             self.after(0, lambda: self.log("[PHASE 4] Installing Missing Mods"))
             self.after(0, lambda: self.log("-" * 40))
-            self.after(0, lambda: self._update_progress(0.5, "Installing missing mods..."))
+            self.after(0, lambda: self._update_progress(0.6, "Installing missing mods..."))
 
             result = self.pre_verify_installer.phase4_install_missing(
                 progress_callback, download_progress_callback
@@ -542,7 +565,7 @@ class ModInstallerApp(ctk.CTk):
             self.after(0, lambda: self.log(""))
             self.after(0, lambda: self.log("[PHASE 5] Final Verification"))
             self.after(0, lambda: self.log("-" * 40))
-            self.after(0, lambda: self._update_progress(0.9, "Verifying installation..."))
+            self.after(0, lambda: self._update_progress(0.85, "Verifying installation..."))
 
             result = self.pre_verify_installer.phase5_final_verify(progress_callback)
             self._log_phase_result(result)

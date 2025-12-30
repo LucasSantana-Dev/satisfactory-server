@@ -1682,6 +1682,60 @@ class PreVerifyInstaller:
         ]
         return "\n".join(lines)
 
+    def cleanup_obsolete_mods(
+        self,
+        valid_mod_refs: List[str],
+        progress_callback: Optional[Callable[[str, str], None]] = None
+    ) -> Tuple[List[str], List[str]]:
+        """
+        Remove mod folders that are not in the valid mod list.
+        This cleans up broken/obsolete mods that may cause game errors.
+
+        Args:
+            valid_mod_refs: List of mod references that should remain installed
+            progress_callback: Optional callback(mod_ref, status_message)
+
+        Returns:
+            Tuple of (removed_mods, failed_to_remove)
+        """
+        removed = []
+        failed = []
+
+        if not self.mods_dir.exists():
+            return removed, failed
+
+        if progress_callback:
+            progress_callback("", "Cleaning up obsolete mods...")
+
+        # Get all installed mod folders
+        installed_folders = [d.name for d in self.mods_dir.iterdir() if d.is_dir()]
+
+        # Find mods to remove (installed but not in valid list)
+        valid_set = set(valid_mod_refs)
+        to_remove = [ref for ref in installed_folders if ref not in valid_set]
+
+        if not to_remove:
+            logger.info("No obsolete mods to remove")
+            return removed, failed
+
+        logger.info(f"Found {len(to_remove)} obsolete mods to remove: {to_remove}")
+
+        for mod_ref in to_remove:
+            mod_path = self.mods_dir / mod_ref
+
+            if progress_callback:
+                progress_callback(mod_ref, f"Removing obsolete mod: {mod_ref}")
+
+            try:
+                shutil.rmtree(mod_path)
+                removed.append(mod_ref)
+                logger.info(f"Removed obsolete mod: {mod_ref}")
+            except Exception as e:
+                failed.append(mod_ref)
+                logger.error(f"Failed to remove {mod_ref}: {e}")
+
+        return removed, failed
+
 
 def get_embedded_mods_config() -> List[Dict]:
     """
@@ -1701,7 +1755,7 @@ def get_embedded_mods_config() -> List[Dict]:
         {"name": "avMall Lib", "mod_reference": "avMallLib", "category": "dependency", "required": True, "priority": 1, "description": "Required by Item Dispenser"},
         # Quality of Life mods (priority 2)
         {"name": "Smart!", "mod_reference": "SmartFoundations", "category": "quality-of-life", "required": False, "priority": 2, "description": "Mass building of foundations, walls, and more"},
-        {"name": "Micro Manage", "mod_reference": "MicroManage", "category": "quality-of-life", "required": False, "priority": 2, "description": "Precise object positioning, rotation, and scaling"},
+        # NOTE: MicroManage removed - marked as BROKEN on ficsit.app
         {"name": "Efficiency Checker", "mod_reference": "EfficiencyCheckerMod", "category": "quality-of-life", "required": False, "priority": 2, "description": "Monitor production efficiency"},
         {"name": "Infinite Zoop", "mod_reference": "InfiniteZoop", "category": "quality-of-life", "required": False, "priority": 2, "description": "Unlimited zoop range"},
         {"name": "Infinite Nudge", "mod_reference": "InfiniteNudge", "category": "quality-of-life", "required": False, "priority": 2, "description": "Unlimited nudge range"},
@@ -1712,9 +1766,9 @@ def get_embedded_mods_config() -> List[Dict]:
         # Content mods (priority 3)
         {"name": "Refined Power", "mod_reference": "RefinedPower", "category": "content", "required": False, "priority": 3, "description": "New power generation options"},
         {"name": "Ficsit Farming", "mod_reference": "FicsitFarming", "category": "content", "required": False, "priority": 3, "description": "Farming mechanics"},
-        {"name": "Teleporter", "mod_reference": "Teleporter", "category": "content", "required": False, "priority": 3, "description": "Instant travel"},
+        # NOTE: Teleporter removed - marked as BROKEN on ficsit.app
         {"name": "Linear Motion", "mod_reference": "LinearMotion", "category": "content", "required": False, "priority": 3, "description": "Moving platforms and elevators"},
-        {"name": "Mk++", "mod_reference": "MK22k20", "category": "content", "required": False, "priority": 3, "description": "Higher tier machines"},
+        # NOTE: MK22k20 (Mk++) removed - marked as BROKEN on ficsit.app
         {"name": "Fluid Extras", "mod_reference": "AB_FluidExtras", "category": "content", "required": False, "priority": 3, "description": "Additional fluid handling"},
         {"name": "Storage Teleporter", "mod_reference": "StorageTeleporter", "category": "content", "required": False, "priority": 3, "description": "Teleport items between storage"},
         {"name": "Big Storage Tank", "mod_reference": "BigStorageTank", "category": "content", "required": False, "priority": 3, "description": "Large fluid storage"},

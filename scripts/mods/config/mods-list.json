@@ -89,14 +89,6 @@
       "description": "Mass building of foundations, walls, and more"
     },
     {
-      "name": "Micro Manage",
-      "mod_reference": "MicroManage",
-      "category": "quality-of-life",
-      "required": false,
-      "priority": 2,
-      "description": "Precise object positioning, rotation, and scaling"
-    },
-    {
       "name": "Efficiency Checker Mod",
       "mod_reference": "EfficiencyCheckerMod",
       "category": "quality-of-life",
@@ -257,28 +249,12 @@
       "description": "Farming mechanics and food production"
     },
     {
-      "name": "Teleporter",
-      "mod_reference": "Teleporter",
-      "category": "content",
-      "required": false,
-      "priority": 3,
-      "description": "Instant travel between locations"
-    },
-    {
       "name": "Linear Motion",
       "mod_reference": "LinearMotion",
       "category": "content",
       "required": false,
       "priority": 3,
       "description": "Moving platforms and elevators"
-    },
-    {
-      "name": "Mk++",
-      "mod_reference": "MK22k20",
-      "category": "content",
-      "required": false,
-      "priority": 3,
-      "description": "Higher tier buildings and machines"
     },
     {
       "name": "Fluid Extras",
