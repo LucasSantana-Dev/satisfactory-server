@@ -250,7 +250,8 @@ class FicsitCLI:
         success, output = self._run_command(["installation", "add", game_path])
         if success:
             return True, f"Added installation: {game_path}"
-        elif "already exists" in output.lower():
+        # ficsit-cli may return "already exists" or "already present"
+        elif "already exists" in output.lower() or "already present" in output.lower():
             return True, f"Installation already registered: {game_path}"
         return False, output
 
@@ -261,7 +262,8 @@ class FicsitCLI:
         success, output = self._run_command(["profile", "new", name])
         if success:
             return True, f"Created profile: {name}"
-        elif "already exists" in output.lower():
+        # ficsit-cli may return "already exists" or "already present"
+        elif "already exists" in output.lower() or "already present" in output.lower():
             return True, f"Profile already exists: {name}"
         return False, output
 

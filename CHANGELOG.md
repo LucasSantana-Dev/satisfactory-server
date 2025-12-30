@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.4] - 2024-12-30
+
+### Fixed (Client Mod Installer)
+
+- **Critical fix: "installation already present" error**
+  - ficsit-cli returns "already present" but we were checking for "already exists"
+  - Now correctly handles both messages as success
+  - This was causing all mod installations to fail when installation was already registered
+
 ## [1.1.3] - 2024-12-30
 
 ### Added (Client Mod Installer)
