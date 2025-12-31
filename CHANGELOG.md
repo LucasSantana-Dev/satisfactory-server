@@ -7,6 +7,69 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0] - 2024-12-31
+
+### Added (Client Mod Installer - Version Selection & Updates)
+
+- **Version Selection Dropdowns**
+  - Each mod now has a version dropdown next to its checkbox
+  - Select specific mod versions instead of always using "Latest"
+  - "Load Versions" button fetches all available versions from ficsit.app API
+  - Up to 15 recent versions shown per mod
+
+- **Check Updates Feature**
+  - New "Check Updates" button compares installed vs available versions
+  - Scans installed mods by reading .uplugin version info
+  - Shows detailed report: installed count, outdated count, not installed count
+  - Compares semantic versions to detect available updates
+
+- **Updates Panel**
+  - Collapsible panel appears when updates are available
+  - Shows list of outdated mods with installed version → latest version
+  - Individual "Update" button for each outdated mod
+  - "Select All" checkbox for batch selection
+  - "Update Selected" button for batch updates
+  - Panel auto-hides when no updates available
+
+- **Selective Update System**
+  - Update individual mods without reinstalling everything
+  - Downloads and installs only the selected mod(s)
+  - Preserves other installed mods untouched
+  - Shows progress and success/failure for each mod
+
+- **Version Cache System**
+  - Local cache (`~/.satisfactory-mod-installer/version_cache.json`)
+  - 1-hour TTL to reduce API calls
+  - Cache is invalidated after mod updates
+  - Automatic fetch on cache miss
+
+### Added (Core Classes)
+
+- **`ModVersion` dataclass** - Represents a specific version with download URL and metadata
+- **`UpdateInfo` dataclass** - Contains update comparison info for a mod
+- **`VersionCache` class** - Local JSON cache with TTL for version data
+- **`UpdateChecker` class** - Compares installed vs available versions
+
+### Added (API)
+
+- `FicsitAPIClient.get_mod_versions(mod_reference, limit)` - Fetch multiple versions
+- `FicsitAPIClient.get_mod_version_download_url(mod_reference, version)` - Get specific version URL
+
+### Changed
+
+- Window title now shows "Satisfactory Mod Installer v2.0"
+- Increased default window size to 850x900 for better layout
+- Mod list now uses grid layout with checkbox column + version dropdown column
+- Added row 3 for updates panel (progress, log, and buttons shifted down)
+- Action buttons now in a 3-column layout: Install | Check Updates | Verify
+
+### Technical
+
+- GUI now initializes `api_client`, `version_cache`, and `update_checker` on mod load
+- Version selection stored in `mod_version_vars` dict
+- Update panel UI dynamically generated based on outdated mods list
+- Background threads used for API calls to keep UI responsive
+
 ## [1.2.4] - 2024-12-31
 
 ### Added

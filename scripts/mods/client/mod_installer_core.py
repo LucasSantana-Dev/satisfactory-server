@@ -11,8 +11,9 @@ import platform
 import shutil
 import subprocess
 import tempfile
+import time
 import zipfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
 
@@ -53,6 +54,26 @@ class InstallResult:
     message: str
     version: Optional[str] = None
     files_installed: int = 0
+
+
+@dataclass
+class ModVersion:
+    """Represents a specific version of a mod."""
+    version: str
+    download_url: Optional[str]
+    created_at: str
+    has_windows_target: bool
+
+
+@dataclass
+class UpdateInfo:
+    """Information about available updates for a mod."""
+    mod_reference: str
+    mod_name: str
+    installed_version: Optional[str]
+    latest_version: str
+    available_versions: List[str]
+    needs_update: bool
 
 
 class FicsitCLI:
@@ -686,6 +707,376 @@ class FicsitAPIClient:
         except (KeyError, json.JSONDecodeError) as e:
             logger.error(f"Failed to parse API response for {mod_reference}: {e}")
             return None, None, [], None
+
+    def get_mod_versions(self, mod_reference: str, limit: int = 20) -> List[ModVersion]:
+        """
+        Fetch available versions for a mod from ficsit.app API.
+
+        Args:
+            mod_reference: The mod's reference ID
+            limit: Maximum number of versions to fetch (default 20)
+
+        Returns:
+            List of ModVersion objects, newest first
+        """
+        query = """
+        query GetModVersions($modReference: ModReference!, $limit: Int!) {
+            getModByReference(modReference: $modReference) {
+                name
+                versions(filter: {limit: $limit, order_by: created_at, order: desc}) {
+                    version
+                    created_at
+                    targets {
+                        targetName
+                        link
+                    }
+                }
+            }
+        }
+        """
+
+        variables = {"modReference": mod_reference, "limit": limit}
+
+        try:
+            response = self.session.post(
+                FICSIT_API_URL,
+                json={"query": query, "variables": variables},
+                timeout=REQUEST_TIMEOUT
+            )
+            response.raise_for_status()
+            data = response.json()
+
+            mod_data = data.get("data", {}).get("getModByReference")
+            if not mod_data:
+                logger.warning(f"Mod not found on ficsit.app: {mod_reference}")
+                return []
+
+            versions = mod_data.get("versions", [])
+            result = []
+
+            for version_info in versions:
+                version = version_info.get("version")
+                created_at = version_info.get("created_at", "")
+
+                # Find Windows target
+                download_url = None
+                has_windows = False
+                targets = version_info.get("targets", [])
+                for target in targets:
+                    if target.get("targetName") == "Windows":
+                        has_windows = True
+                        link = target.get("link", "")
+                        if link and not link.startswith("http"):
+                            link = f"https://api.ficsit.app{link}"
+                        download_url = link
+                        break
+
+                result.append(ModVersion(
+                    version=version,
+                    download_url=download_url,
+                    created_at=created_at,
+                    has_windows_target=has_windows
+                ))
+
+            return result
+
+        except requests.RequestException as e:
+            logger.error(f"API request failed for {mod_reference}: {e}")
+            return []
+        except (KeyError, json.JSONDecodeError) as e:
+            logger.error(f"Failed to parse API response for {mod_reference}: {e}")
+            return []
+
+    def get_mod_version_download_url(self, mod_reference: str, version: str) -> Optional[str]:
+        """
+        Get download URL for a specific version of a mod.
+
+        Args:
+            mod_reference: The mod's reference ID
+            version: The specific version to get
+
+        Returns:
+            Download URL or None if not found
+        """
+        versions = self.get_mod_versions(mod_reference, limit=50)
+        for v in versions:
+            if v.version == version and v.download_url:
+                return v.download_url
+        return None
+
+
+class VersionCache:
+    """
+    Cache for mod version information.
+    Stores fetched versions locally to avoid repeated API calls.
+    """
+
+    CACHE_TTL_SECONDS = 3600  # 1 hour
+
+    def __init__(self, cache_dir: Optional[Path] = None):
+        """
+        Initialize version cache.
+
+        Args:
+            cache_dir: Directory for cache storage. Defaults to user's app data.
+        """
+        if cache_dir:
+            self.cache_dir = Path(cache_dir)
+        else:
+            if platform.system() == "Windows":
+                self.cache_dir = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "SatisfactoryModInstaller"
+            else:
+                self.cache_dir = Path.home() / ".satisfactory-mod-installer"
+
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        self.cache_file = self.cache_dir / "version_cache.json"
+        self._cache: Dict = {}
+        self._load_cache()
+
+    def _load_cache(self):
+        """Load cache from disk."""
+        if self.cache_file.exists():
+            try:
+                with open(self.cache_file, 'r', encoding='utf-8') as f:
+                    self._cache = json.load(f)
+            except (json.JSONDecodeError, IOError) as e:
+                logger.warning(f"Failed to load version cache: {e}")
+                self._cache = {}
+        else:
+            self._cache = {}
+
+    def _save_cache(self):
+        """Save cache to disk."""
+        try:
+            with open(self.cache_file, 'w', encoding='utf-8') as f:
+                json.dump(self._cache, f, indent=2)
+        except IOError as e:
+            logger.warning(f"Failed to save version cache: {e}")
+
+    def _is_expired(self, entry: Dict) -> bool:
+        """Check if a cache entry has expired."""
+        cached_at = entry.get("cached_at", 0)
+        return (time.time() - cached_at) > self.CACHE_TTL_SECONDS
+
+    def get_versions(self, mod_reference: str) -> Optional[List[ModVersion]]:
+        """
+        Get cached versions for a mod.
+
+        Returns:
+            List of ModVersion objects or None if not cached/expired
+        """
+        entry = self._cache.get(mod_reference)
+        if entry is None or self._is_expired(entry):
+            return None
+
+        versions = []
+        for v_data in entry.get("versions", []):
+            versions.append(ModVersion(
+                version=v_data["version"],
+                download_url=v_data.get("download_url"),
+                created_at=v_data.get("created_at", ""),
+                has_windows_target=v_data.get("has_windows_target", False)
+            ))
+        return versions
+
+    def set_versions(self, mod_reference: str, versions: List[ModVersion]):
+        """
+        Cache versions for a mod.
+
+        Args:
+            mod_reference: The mod's reference ID
+            versions: List of ModVersion objects to cache
+        """
+        self._cache[mod_reference] = {
+            "cached_at": time.time(),
+            "versions": [
+                {
+                    "version": v.version,
+                    "download_url": v.download_url,
+                    "created_at": v.created_at,
+                    "has_windows_target": v.has_windows_target
+                }
+                for v in versions
+            ]
+        }
+        self._save_cache()
+
+    def get_or_fetch(
+        self,
+        mod_reference: str,
+        api_client: FicsitAPIClient,
+        limit: int = 20
+    ) -> List[ModVersion]:
+        """
+        Get versions from cache or fetch from API if not cached/expired.
+
+        Args:
+            mod_reference: The mod's reference ID
+            api_client: API client to use for fetching
+            limit: Max versions to fetch if not cached
+
+        Returns:
+            List of ModVersion objects
+        """
+        cached = self.get_versions(mod_reference)
+        if cached is not None:
+            logger.debug(f"Cache hit for {mod_reference}")
+            return cached
+
+        logger.debug(f"Cache miss for {mod_reference}, fetching from API")
+        versions = api_client.get_mod_versions(mod_reference, limit)
+        if versions:
+            self.set_versions(mod_reference, versions)
+        return versions
+
+    def clear(self):
+        """Clear all cached data."""
+        self._cache = {}
+        if self.cache_file.exists():
+            self.cache_file.unlink()
+
+    def invalidate(self, mod_reference: str):
+        """Invalidate cache for a specific mod."""
+        if mod_reference in self._cache:
+            del self._cache[mod_reference]
+            self._save_cache()
+
+
+class UpdateChecker:
+    """
+    Checks for available updates by comparing installed mod versions
+    against available versions from the API.
+    """
+
+    def __init__(
+        self,
+        mods_dir: Path,
+        api_client: Optional[FicsitAPIClient] = None,
+        version_cache: Optional[VersionCache] = None
+    ):
+        """
+        Initialize UpdateChecker.
+
+        Args:
+            mods_dir: Path to the game's Mods directory
+            api_client: API client for fetching versions
+            version_cache: Cache for version data
+        """
+        self.mods_dir = Path(mods_dir)
+        self.api_client = api_client or FicsitAPIClient()
+        self.version_cache = version_cache or VersionCache()
+
+    def _compare_versions(self, installed: str, latest: str) -> bool:
+        """
+        Compare two version strings to determine if update is needed.
+
+        Returns:
+            True if latest is newer than installed
+        """
+        try:
+            # Parse version strings like "1.2.3" or "v1.2.3"
+            def parse_version(v: str) -> Tuple[int, ...]:
+                v = v.lstrip('v')
+                parts = v.split('.')
+                return tuple(int(p) for p in parts if p.isdigit())
+
+            installed_tuple = parse_version(installed)
+            latest_tuple = parse_version(latest)
+
+            return latest_tuple > installed_tuple
+        except (ValueError, AttributeError):
+            # If parsing fails, do string comparison
+            return installed != latest
+
+    def _get_installed_version(self, mod_ref: str) -> Optional[str]:
+        """Get the installed version of a mod by reading its .uplugin file."""
+        mod_dir = self.mods_dir / mod_ref
+
+        if not mod_dir.exists():
+            return None
+
+        # Look for .uplugin file
+        uplugin_files = list(mod_dir.glob("*.uplugin"))
+        if not uplugin_files:
+            return None
+
+        try:
+            with open(uplugin_files[0], 'r', encoding='utf-8') as f:
+                uplugin_data = json.load(f)
+                return uplugin_data.get("VersionName") or str(uplugin_data.get("Version", ""))
+        except (json.JSONDecodeError, IOError):
+            return None
+
+    def check_for_updates(
+        self,
+        mod_refs: List[str],
+        mod_names: Optional[Dict[str, str]] = None,
+        progress_callback: Optional[Callable[[str, str], None]] = None
+    ) -> List[UpdateInfo]:
+        """
+        Check for available updates for the specified mods.
+
+        Args:
+            mod_refs: List of mod references to check
+            mod_names: Optional dict mapping mod_ref to display name
+            progress_callback: Optional callback(mod_ref, status_message)
+
+        Returns:
+            List of UpdateInfo for mods with available updates
+        """
+        results = []
+        mod_names = mod_names or {}
+
+        for i, mod_ref in enumerate(mod_refs):
+            if progress_callback:
+                progress_callback(mod_ref, f"Checking {mod_ref} ({i+1}/{len(mod_refs)})...")
+
+            # Get installed version
+            installed_version = self._get_installed_version(mod_ref)
+
+            # Get available versions from cache or API
+            versions = self.version_cache.get_or_fetch(mod_ref, self.api_client)
+
+            if not versions:
+                logger.warning(f"No versions found for {mod_ref}")
+                continue
+
+            latest_version = versions[0].version
+            available_version_strings = [v.version for v in versions if v.has_windows_target]
+
+            # Determine if update is needed
+            needs_update = False
+            if installed_version and latest_version:
+                needs_update = self._compare_versions(installed_version, latest_version)
+            elif installed_version is None:
+                # Not installed - could be considered as needing "update" (install)
+                needs_update = False  # We'll handle this differently
+
+            results.append(UpdateInfo(
+                mod_reference=mod_ref,
+                mod_name=mod_names.get(mod_ref, mod_ref),
+                installed_version=installed_version,
+                latest_version=latest_version,
+                available_versions=available_version_strings,
+                needs_update=needs_update
+            ))
+
+        return results
+
+    def get_outdated_mods(
+        self,
+        mod_refs: List[str],
+        mod_names: Optional[Dict[str, str]] = None,
+        progress_callback: Optional[Callable[[str, str], None]] = None
+    ) -> List[UpdateInfo]:
+        """
+        Get only mods that have updates available.
+
+        Returns:
+            List of UpdateInfo for mods that need updates
+        """
+        all_updates = self.check_for_updates(mod_refs, mod_names, progress_callback)
+        return [u for u in all_updates if u.needs_update]
 
 
 @dataclass
