@@ -72,8 +72,8 @@ main() {
     local start_time
     start_time=$(date +%s)
 
-    # Check if server is currently running
-    if is_container_running "satisfactory-server"; then
+    # Check if server is currently running (use service name, not container name)
+    if is_container_running "satisfactory"; then
         server_was_running=true
         log "Server is currently running"
     else
@@ -158,4 +158,3 @@ main() {
 }
 
 main "$@"
-
