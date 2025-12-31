@@ -13,6 +13,7 @@ init_common
 
 BACKUP_SCRIPT="${SCRIPTS_DIR}/server/backup.sh"
 MONITOR_SCRIPT="${SCRIPTS_DIR}/server/monitor.sh"
+UPDATE_MODS_SCRIPT="${SCRIPTS_DIR}/server/update-mods.sh"
 
 print_header "Satisfactory Server Cron Installation"
 
@@ -40,9 +41,15 @@ if [[ ! -f "$MONITOR_SCRIPT" ]]; then
     exit 1
 fi
 
+if [[ ! -f "$UPDATE_MODS_SCRIPT" ]]; then
+    print_error "Update mods script not found: $UPDATE_MODS_SCRIPT"
+    exit 1
+fi
+
 # Make scripts executable
 chmod +x "$BACKUP_SCRIPT"
 chmod +x "$MONITOR_SCRIPT"
+chmod +x "$UPDATE_MODS_SCRIPT"
 print_success "Scripts are executable"
 
 # Get current user
@@ -74,6 +81,16 @@ if grep -q "satisfactory.*monitor.sh" "$CRON_FILE" 2>/dev/null; then
     fi
 fi
 
+if grep -q "satisfactory.*update-mods.sh" "$CRON_FILE" 2>/dev/null; then
+    print_warn "Mod update cron job already exists"
+    read -p "Replace existing mod update job? (y/N): " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        grep -v "satisfactory.*update-mods.sh" "$CRON_FILE" > "${CRON_FILE}.tmp"
+        mv "${CRON_FILE}.tmp" "$CRON_FILE"
+    fi
+fi
+
 # Add new cron jobs
 echo ""
 print_info "Adding cron jobs..."
@@ -85,6 +102,10 @@ echo "0 4 * * * cd $PROJECT_DIR && $BACKUP_SCRIPT >> $LOGS_DIR/backup-cron.log 2
 # Monitor job: Every 5 minutes
 echo "# Satisfactory Server - Health check every 5 minutes" >> "$CRON_FILE"
 echo "*/5 * * * * cd $PROJECT_DIR && $MONITOR_SCRIPT >> $LOGS_DIR/monitor-cron.log 2>&1" >> "$CRON_FILE"
+
+# Mod update job: Daily at 4:30 AM (after backup)
+echo "# Satisfactory Server - Daily mod update at 4:30 AM" >> "$CRON_FILE"
+echo "30 4 * * * cd $PROJECT_DIR && $UPDATE_MODS_SCRIPT >> $LOGS_DIR/update-mods-cron.log 2>&1" >> "$CRON_FILE"
 
 # Install crontab
 print_info "Installing crontab..."
@@ -98,6 +119,7 @@ print_success "Cron jobs installed successfully!"
 echo ""
 echo "Installed jobs:"
 echo "  - Daily backup: 0 4 * * * (4:00 AM)"
+echo "  - Daily mod update: 30 4 * * * (4:30 AM)"
 echo "  - Health monitoring: */5 * * * * (every 5 minutes)"
 echo ""
 echo "To view your crontab:"
@@ -108,4 +130,5 @@ echo "  crontab -l | grep -v 'satisfactory' | crontab -"
 echo ""
 echo "Log files:"
 echo "  - Backup: $LOGS_DIR/backup-cron.log"
+echo "  - Mod update: $LOGS_DIR/update-mods-cron.log"
 echo "  - Monitor: $LOGS_DIR/monitor-cron.log"

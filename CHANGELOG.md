@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.4] - 2024-12-31
+
+### Added
+
+- **Daily Mod Auto-Update**: Server mods are now automatically updated every day at 4:30 AM
+  - New `scripts/server/update-mods.sh` script handles safe server stop, mod update, and restart
+  - Discord notifications sent when server goes down and when it comes back online
+  - Runs 30 minutes after daily backup to ensure save data is protected
+  - Cron job automatically added via `scripts/setup/install-cron.sh`
+
+### Changed
+
+- **Cron schedule**: Updated to include mod update job
+  - 4:00 AM - Daily backup
+  - 4:30 AM - Mod update (with Discord notifications)
+  - Every 5 min - Health check
+
 ## [1.2.3] - 2024-12-30
 
 ### Fixed
